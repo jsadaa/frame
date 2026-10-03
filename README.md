@@ -30,6 +30,22 @@ cargo run --release
 cargo test --workspace
 ```
 
+## Development
+
+Run the checks before every commit:
+
+```bash
+scripts/check.sh
+```
+
+The script runs three steps, in order, and stops at the first failure:
+
+1. `cargo fmt --all --check`: the code follows rustfmt's default style;
+2. `cargo clippy --workspace --all-targets -- -D warnings`: no compiler or Clippy warning remains;
+3. `cargo test --workspace`: every test passes.
+
+The CI runs the same script on every push.
+
 ## Project structure
 
 Frame is organized as a Cargo workspace with the following crates:
