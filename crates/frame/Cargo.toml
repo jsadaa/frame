@@ -1,0 +1,8 @@
+[package]
+name = "frame"
+license.workspace = true
+edition.workspace = true
+version.workspace = true
+publish.workspace = true
+
+[dependencies]
