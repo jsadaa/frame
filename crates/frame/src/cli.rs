@@ -30,6 +30,28 @@ pub enum Command {
     Version,
 }
 
+impl fmt::Display for Command {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            Command::Run { target, args } => write!(f, "run: target {target:?}, args {args:?}"),
+            Command::Build { target, out } => write!(f, "build: target {target:?}, out {out:?}"),
+            Command::Check { target } => write!(f, "check: target {target:?}"),
+            Command::Fmt { check, paths } => write!(f, "fmt: check {check}, paths {paths:?}"),
+            Command::Test {
+                target,
+                filter,
+                seed,
+            } => write!(
+                f,
+                "test: target {target:?}, filter {filter:?}, seed {seed:?}"
+            ),
+            Command::Explain { code } => write!(f, "explain: code {code:?}"),
+            Command::Help => write!(f, "help"),
+            Command::Version => write!(f, "version"),
+        }
+    }
+}
+
 /// A usage error from the input args
 pub enum UsageError {
     InvalidUtf8(String),
