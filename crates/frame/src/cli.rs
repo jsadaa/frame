@@ -232,7 +232,7 @@ fn handle_test_command(args: &[OsString]) -> Result<Command, UsageError> {
                     return Err(UsageError::DuplicatedOption("--seed".to_string()));
                 }
             }
-            Some(option) if option.starts_with("--") => {
+            Some(option) if option.starts_with("-") => {
                 return Err(UsageError::UnknownOption(option.to_string()));
             }
             Some(_) => {
