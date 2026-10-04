@@ -167,7 +167,7 @@ fn handle_build_command(args: &[OsString]) -> Result<Command, UsageError> {
                     return Err(UsageError::OptionExpectValue("-o".to_string()));
                 }
 
-                if !option_is_unique(args, "-o") {
+                if !arg_is_unique(args, "-o") {
                     return Err(UsageError::DuplicatedOption("-o".to_string()));
                 }
             }
@@ -218,7 +218,7 @@ fn handle_test_command(args: &[OsString]) -> Result<Command, UsageError> {
                     return Err(UsageError::OptionExpectValue("--name".to_string()));
                 }
 
-                if !option_is_unique(args, "--name") {
+                if !arg_is_unique(args, "--name") {
                     return Err(UsageError::DuplicatedOption("--name".to_string()));
                 }
             }
@@ -228,7 +228,7 @@ fn handle_test_command(args: &[OsString]) -> Result<Command, UsageError> {
                     return Err(UsageError::OptionExpectValue("--seed".to_string()));
                 }
 
-                if !option_is_unique(args, "--seed") {
+                if !arg_is_unique(args, "--seed") {
                     return Err(UsageError::DuplicatedOption("--seed".to_string()));
                 }
             }
@@ -266,7 +266,7 @@ fn handle_fmt_command(args: &[OsString]) -> Result<Command, UsageError> {
         .collect();
 
     match arg_exists(args, "--check") {
-        true if !option_is_unique(args, "--check") => {
+        true if !arg_is_unique(args, "--check") => {
             Err(UsageError::DuplicatedOption("--check".to_string()))
         }
         true => Ok(Command::Fmt { check: true, paths }),
@@ -342,7 +342,7 @@ fn arg_starts_with_hyphen(arg: &OsString) -> bool {
     arg.to_str().is_some_and(|arg| arg.starts_with("-"))
 }
 
-fn option_is_unique(args: &[OsString], option: &str) -> bool {
+fn arg_is_unique(args: &[OsString], option: &str) -> bool {
     args.iter()
         .filter(|a| a.to_str().is_some_and(|a| a == option))
         .count()
