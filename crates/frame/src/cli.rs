@@ -53,6 +53,7 @@ impl fmt::Display for Command {
 }
 
 /// A usage error from the input args
+#[derive(Debug, PartialEq)]
 pub enum UsageError {
     InvalidUtf8(String),
     MissingCommand,
