@@ -61,6 +61,12 @@ pub enum UsageError {
     InvalidHexadecimal(String),
     CommandExpectArg(String, String),
     OptionExpectValue(String),
+    CommandTakesNoArg(String),
+    OptionBeforeTarget(String, String),
+    DuplicatedOption(String),
+    DuplicatedTarget,
+    DuplicatedCode,
+    UnknownOption(String),
 }
 
 impl fmt::Display for UsageError {
@@ -75,6 +81,27 @@ impl fmt::Display for UsageError {
             }
             UsageError::OptionExpectValue(option) => {
                 write!(f, "option {option:?} expects a value")
+            }
+            UsageError::CommandTakesNoArg(command) => {
+                write!(f, "command {command:?} takes no arguments")
+            }
+            UsageError::OptionBeforeTarget(command, option) => {
+                write!(
+                    f,
+                    "command {command:?} needs a target before option {option}"
+                )
+            }
+            UsageError::DuplicatedOption(option) => {
+                write!(f, "option {option:?} is duplicated")
+            }
+            UsageError::DuplicatedTarget => {
+                write!(f, "target is duplicated")
+            }
+            UsageError::DuplicatedCode => {
+                write!(f, "code is duplicated")
+            }
+            UsageError::UnknownOption(option) => {
+                write!(f, "unknown option: {option}")
             }
         }
     }
