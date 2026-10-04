@@ -137,7 +137,7 @@ fn handle_run_command(args: &[OsString]) -> Result<Command, UsageError> {
     if target.clone().filter(arg_starts_with_hyphen).is_some() {
         return Err(UsageError::OptionBeforeTarget(
             "run".to_string(),
-            target.unwrap().to_str().unwrap().to_string(), // we can unwrap because the guard is applied in `arg_is_option`
+            target.unwrap().to_str().unwrap().to_string(), // we can unwrap because the guard is applied in `arg_starts_with_hyphen`
         ));
     }
 
