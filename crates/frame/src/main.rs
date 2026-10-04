@@ -1,5 +1,8 @@
 //! The `frame` command-line interface.
 
+mod cli;
+
 fn main() {
-    println!("{} {}", env!("CARGO_PKG_NAME"), env!("CARGO_PKG_VERSION"));
+    let args: Vec<_> = std::env::args_os().collect();
+    let _ = cli::parse_args(&args);
 }
