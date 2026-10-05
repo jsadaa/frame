@@ -118,24 +118,22 @@ impl fmt::Display for UsageError {
 ///
 /// Return a `UsageError` when the arguments or the command are invalid
 pub fn parse_args(args: &[OsString]) -> Result<Command, UsageError> {
-    let first = args.split_first();
+    let Some((subcommand, rest)) = args.split_first() else {
+        return Err(UsageError::MissingCommand);
+    };
 
-    if let Some((subcommand, rest)) = first {
-        return match subcommand.to_str() {
-            Some("run") => parse_run(rest),
-            Some("build") => parse_build(rest),
-            Some("check") => parse_check(rest),
-            Some("test") => parse_test(rest),
-            Some("fmt") => parse_fmt(rest),
-            Some("explain") => parse_explain(rest),
-            Some("--help") => parse_help(rest),
-            Some("--version") => parse_version(rest),
-            Some(unknown) => Err(UsageError::UnknownCommand(unknown.to_owned())),
-            None => Err(UsageError::InvalidUtf8(lossy_string(subcommand))),
-        };
+    match subcommand.to_str() {
+        Some("run") => parse_run(rest),
+        Some("build") => parse_build(rest),
+        Some("check") => parse_check(rest),
+        Some("test") => parse_test(rest),
+        Some("fmt") => parse_fmt(rest),
+        Some("explain") => parse_explain(rest),
+        Some("--help") => parse_help(rest),
+        Some("--version") => parse_version(rest),
+        Some(unknown) => Err(UsageError::UnknownCommand(unknown.to_owned())),
+        None => Err(UsageError::InvalidUtf8(lossy_string(subcommand))),
     }
-
-    Err(UsageError::MissingCommand)
 }
 
 // Parsers
