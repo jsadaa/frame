@@ -4,8 +4,6 @@ use std::{
     path::PathBuf,
 };
 
-use crate::cli::UsageError::UnexpectedArgument;
-
 /// The frame cli subcommands, each holding its own specific args
 #[derive(Debug, PartialEq)]
 pub enum Command {
