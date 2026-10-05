@@ -167,7 +167,7 @@ fn parse_build(args: &[OsString]) -> Result<Command, UsageError> {
                 return Err(UsageError::RepeatedOption("-o"));
             }
             Some("-o") => {
-                output = Some(parse_option_value(iter.next(), "-o").map(PathBuf::from)?);
+                output = Some(parse_option_value_unchecked(iter.next(), "-o").map(PathBuf::from)?);
             }
             Some(option) if option.starts_with('-') => {
                 return Err(UsageError::UnknownOption(option.to_string()));
@@ -195,6 +195,7 @@ fn parse_check(args: &[OsString]) -> Result<Command, UsageError> {
             Some(path) if target.is_none() => {
                 target = Some(PathBuf::from(path));
             }
+            None if target.is_none() => target = Some(PathBuf::from(arg)), // keep path as is, even invalid
             _ => return Err(UsageError::UnexpectedArgument(lossy_string(arg))),
         }
     }
@@ -228,7 +229,7 @@ fn parse_test(args: &[OsString]) -> Result<Command, UsageError> {
                 return Err(UsageError::UnexpectedArgument(a.to_string()));
             }
             _ => {
-                target = Some(PathBuf::from(arg)); // we keep paths as is, even invalids
+                target = Some(PathBuf::from(arg)); // keep paths as is, even invalids
             }
         }
     }
@@ -306,6 +307,17 @@ fn parse_option_value(
 ) -> Result<String, UsageError> {
     if let Some(value) = value {
         parse_text(value)
+    } else {
+        Err(UsageError::OptionExpectsValue(option))
+    }
+}
+
+fn parse_option_value_unchecked(
+    value: Option<&OsString>,
+    option: &'static str,
+) -> Result<OsString, UsageError> {
+    if let Some(value) = value {
+        Ok(value.clone())
     } else {
         Err(UsageError::OptionExpectsValue(option))
     }
