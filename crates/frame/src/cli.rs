@@ -33,7 +33,7 @@ pub enum Command {
         /// An optional target path, aiming a frame test file (`*.fm`)
         target: Option<PathBuf>,
         /// An optional name, filtering the matching tests
-        filter: Option<String>,
+        name: Option<String>,
         /// An optional seed, as an hexadecimal number
         seed: Option<u64>,
     },
@@ -146,15 +146,7 @@ fn parse_run(args: &[OsString]) -> Result<Command, UsageError> {
             return Err(UsageError::UnknownOption(lossy_string(target)));
         }
         [target] => (Some(PathBuf::from(target)), Vec::new()),
-        [target, program_args @ ..] => {
-            for arg in program_args {
-                if !is_valid_utf8(arg) {
-                    return Err(UsageError::InvalidUtf8(lossy_string(arg)));
-                }
-            }
-
-            (Some(PathBuf::from(target)), program_args.to_vec())
-        }
+        [target, program_args @ ..] => (Some(PathBuf::from(target)), program_args.to_vec()),
         _ => (None, Vec::new()),
     };
 
@@ -166,7 +158,7 @@ fn parse_run(args: &[OsString]) -> Result<Command, UsageError> {
 
 fn parse_build(args: &[OsString]) -> Result<Command, UsageError> {
     let mut target: Option<PathBuf> = None;
-    let mut output: Option<&OsString> = None;
+    let mut output: Option<PathBuf> = None;
 
     let mut iter = args.iter();
 
@@ -176,10 +168,7 @@ fn parse_build(args: &[OsString]) -> Result<Command, UsageError> {
                 return Err(UsageError::RepeatedOption("-o"));
             }
             Some("-o") => {
-                output = iter.next();
-                if output.is_none() {
-                    return Err(UsageError::OptionExpectsValue("-o"));
-                }
+                output = Some(parse_option_value(iter.next(), "-o").map(PathBuf::from)?);
             }
             Some(option) if option.starts_with('-') => {
                 return Err(UsageError::UnknownOption(option.to_string()));
@@ -193,10 +182,7 @@ fn parse_build(args: &[OsString]) -> Result<Command, UsageError> {
         }
     }
 
-    Ok(Command::Build {
-        target,
-        output: output.map(PathBuf::from),
-    })
+    Ok(Command::Build { target, output })
 }
 
 fn parse_check(args: &[OsString]) -> Result<Command, UsageError> {
@@ -220,40 +206,22 @@ fn parse_check(args: &[OsString]) -> Result<Command, UsageError> {
 
 fn parse_test(args: &[OsString]) -> Result<Command, UsageError> {
     let mut target: Option<PathBuf> = None;
-    let mut filter: Option<&OsString> = None;
-    let mut seed: Option<&OsString> = None;
+    let mut name: Option<String> = None;
+    let mut seed: Option<u64> = None;
 
     let mut iter = args.iter();
 
     while let Some(arg) = iter.next() {
         match arg.to_str() {
-            Some("--name") if filter.is_some() => {
+            Some("--name") if name.is_some() => {
                 return Err(UsageError::RepeatedOption("--name"));
             }
-            Some("--name") => {
-                filter = match iter.next() {
-                    Some(f) if f.to_str().is_none() => {
-                        return Err(UsageError::InvalidUtf8(lossy_string(f)));
-                    }
-                    Some(f) => Some(f),
-                    None => {
-                        return Err(UsageError::OptionExpectsValue("--name"));
-                    }
-                };
-            }
+            Some("--name") => name = Some(parse_option_value(iter.next(), "--name")?),
             Some("--seed") if seed.is_some() => {
                 return Err(UsageError::RepeatedOption("--seed"));
             }
             Some("--seed") => {
-                seed = match iter.next() {
-                    Some(s) if s.to_str().is_none() => {
-                        return Err(UsageError::InvalidUtf8(lossy_string(s)));
-                    }
-                    Some(s) => Some(s),
-                    None => {
-                        return Err(UsageError::OptionExpectsValue("--seed"));
-                    }
-                };
+                seed = Some(parse_option_value(iter.next(), "--seed").and_then(parse_seed)?)
             }
             Some(option) if option.starts_with('-') => {
                 return Err(UsageError::UnknownOption(option.to_string()));
@@ -267,23 +235,7 @@ fn parse_test(args: &[OsString]) -> Result<Command, UsageError> {
         }
     }
 
-    let seed: Option<u64> = if let Some(s) = seed {
-        let parsed = parse_seed(s);
-
-        if let Err(p) = parsed {
-            return Err(p);
-        }
-
-        Some(parsed.unwrap())
-    } else {
-        None
-    };
-
-    Ok(Command::Test {
-        target,
-        filter: filter.and_then(|f| f.to_str().map(String::from)),
-        seed,
-    })
+    Ok(Command::Test { target, name, seed })
 }
 
 fn parse_fmt(args: &[OsString]) -> Result<Command, UsageError> {
@@ -313,13 +265,10 @@ fn parse_explain(args: &[OsString]) -> Result<Command, UsageError> {
         [code, ..] if is_option(code) => {
             return Err(UsageError::UnknownOption(lossy_string(code)));
         }
-        [code, ..] if !is_valid_utf8(code) => {
-            return Err(UsageError::InvalidUtf8(lossy_string(code)));
-        }
         [_, other, ..] => {
             return Err(UsageError::UnexpectedArgument(lossy_string(other)));
         }
-        [code] => Some(lossy_string(code)), // we can convert with loss as the guard is already applied above
+        [code] => Some(parse_text(code)?), // we can convert with loss as the guard is already applied above
         _ => None,
     };
 
@@ -346,33 +295,41 @@ fn parse_version(args: &[OsString]) -> Result<Command, UsageError> {
     }
 }
 
-fn parse_seed(arg: &OsStr) -> Result<u64, UsageError> {
-    match arg.to_str() {
-        Some(arg) => {
-            if !(1usize..=16usize).contains(&arg.chars().count())
-                || !arg.chars().all(|c| c.is_ascii_hexdigit())
-            {
-                return Err(UsageError::InvalidSeed(String::from(arg)));
-            }
-
-            u64::from_str_radix(arg, 16).map_err(|_| UsageError::InvalidSeed(String::from(arg)))
-        }
-        None => Err(UsageError::InvalidUtf8(lossy_string(arg))),
+fn parse_seed(seed: String) -> Result<u64, UsageError> {
+    if !(1usize..=16usize).contains(&seed.chars().count())
+        || !seed.chars().all(|c| c.is_ascii_hexdigit())
+    {
+        return Err(UsageError::InvalidSeed(seed));
     }
+
+    u64::from_str_radix(seed.as_str(), 16).map_err(|_| UsageError::InvalidSeed(seed))
 }
 
-fn lossy_string(arg: &OsStr) -> String {
-    arg.to_string_lossy().to_string()
+fn parse_text(arg: &OsStr) -> Result<String, UsageError> {
+    arg.to_str()
+        .map(String::from)
+        .ok_or(UsageError::InvalidUtf8(lossy_string(arg)))
+}
+
+fn parse_option_value(
+    value: Option<&OsString>,
+    option: &'static str,
+) -> Result<String, UsageError> {
+    if let Some(value) = value {
+        parse_text(value)
+    } else {
+        Err(UsageError::OptionExpectsValue(option))
+    }
 }
 
 // Utilities
 
-fn is_option(arg: &OsStr) -> bool {
-    arg.as_encoded_bytes().starts_with(b"-")
+fn lossy_string(arg: &OsStr) -> String {
+    arg.to_string_lossy().into_owned()
 }
 
-fn is_valid_utf8(arg: &OsStr) -> bool {
-    arg.to_str().is_some()
+fn is_option(arg: &OsStr) -> bool {
+    arg.as_encoded_bytes().starts_with(b"-")
 }
 
 #[cfg(test)]
