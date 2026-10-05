@@ -740,7 +740,7 @@ mod tests {
 
     #[cfg(unix)]
     mod non_utf8 {
-        use super::super::{OsString, UsageError, lossy_string, parse_args};
+        use super::super::{Command, OsString, PathBuf, UsageError, lossy_string, parse_args};
         use super::assert_fails_with;
         use std::os::unix::ffi::OsStringExt;
 
@@ -787,6 +787,60 @@ mod tests {
                 UsageError::InvalidUtf8(non_utf8.clone()),
                 format!("argument '{}' is not valid UTF-8", non_utf8,).as_str(),
             );
+        }
+
+        #[test]
+        fn accepts_non_utf8_paths_as_is() {
+            let non_utf8_path = Some(PathBuf::from(OsString::from_vec(vec![0x66, 0xFF])));
+
+            let cases: [(Result<Command, UsageError>, Vec<OsString>); 6] = [
+                (
+                    Ok(Command::Run {
+                        target: non_utf8_path.clone(),
+                        program_args: Vec::new(),
+                    }),
+                    args_list_with_invalid_utf8(&["run"]),
+                ),
+                (
+                    Ok(Command::Build {
+                        target: non_utf8_path.clone(),
+                        output: None,
+                    }),
+                    args_list_with_invalid_utf8(&["build"]),
+                ),
+                (
+                    Ok(Command::Build {
+                        target: None,
+                        output: non_utf8_path.clone(),
+                    }),
+                    args_list_with_invalid_utf8(&["build", "-o"]),
+                ),
+                (
+                    Ok(Command::Check {
+                        target: non_utf8_path.clone(),
+                    }),
+                    args_list_with_invalid_utf8(&["check"]),
+                ),
+                (
+                    Ok(Command::Test {
+                        target: non_utf8_path.clone(),
+                        name: None,
+                        seed: None,
+                    }),
+                    args_list_with_invalid_utf8(&["test"]),
+                ),
+                (
+                    Ok(Command::Fmt {
+                        check: false,
+                        paths: vec![non_utf8_path.clone().unwrap()],
+                    }),
+                    args_list_with_invalid_utf8(&["fmt"]),
+                ),
+            ];
+
+            for (cmd, args) in cases {
+                assert_eq!(parse_args(&args), cmd, "{args:?}");
+            }
         }
     }
 }
