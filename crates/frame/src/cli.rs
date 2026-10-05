@@ -39,7 +39,7 @@ pub enum Command {
     },
     /// The format command
     Fmt {
-        /// If true, name the files it would format and fails if applicable (dry-run)
+        /// If true, name the files it would format and fails without fixing if applicable (dry-run)
         check: bool,
         /// Optional paths, a frame file (`*.fm`) or a package root
         paths: Vec<PathBuf>,
