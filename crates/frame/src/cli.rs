@@ -145,9 +145,8 @@ fn parse_run(args: &[OsString]) -> Result<Command, UsageError> {
         [target, ..] if is_option(target) => {
             return Err(UsageError::UnknownOption(lossy_string(target)));
         }
-        [target] => (Some(PathBuf::from(target)), Vec::new()),
         [target, program_args @ ..] => (Some(PathBuf::from(target)), program_args.to_vec()),
-        _ => (None, Vec::new()),
+        [] => (None, Vec::new()),
     };
 
     Ok(Command::Run {
@@ -266,7 +265,7 @@ fn parse_explain(args: &[OsString]) -> Result<Command, UsageError> {
             return Err(UsageError::UnexpectedArgument(lossy_string(other)));
         }
         [code] => Some(parse_text(code)?), // we can convert with loss as the guard is already applied above
-        _ => None,
+        [] => None,
     };
 
     match code {
