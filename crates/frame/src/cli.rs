@@ -1,3 +1,5 @@
+//! The frame cli parsing module
+
 use std::{
     ffi::{OsStr, OsString},
     fmt,
@@ -9,35 +11,35 @@ use std::{
 pub enum Command {
     /// The run command
     Run {
-        /// An optional target path, aiming a frame file (`*.fm`) or a package root
+        /// An optional target path, pointing to a frame file (`*.fm`) or a package root
         target: Option<PathBuf>,
         /// Optional arguments to pass to the targeted program
         program_args: Vec<OsString>,
     },
-    // The build command
+    /// The build command
     Build {
-        /// An optional target path, aiming a frame file (`*.fm`) or a package root
+        /// An optional target path, pointing to a frame file (`*.fm`) or a package root
         target: Option<PathBuf>,
         /// An optional output path
         output: Option<PathBuf>,
     },
     /// The check command
     Check {
-        /// An optional target path, aiming a frame file (`*.fm`) or a package root
+        /// An optional target path, pointing to a frame file (`*.fm`) or a package root
         target: Option<PathBuf>,
     },
     /// The test command
     Test {
-        /// An optional target path, aiming a frame test file (`*.fm`)
+        /// An optional target path, pointing to a frame file (`*.fm`) or a package root
         target: Option<PathBuf>,
         /// An optional name, filtering the matching tests
         name: Option<String>,
-        /// An optional seed, as an hexadecimal number
+        /// An optional seed, as a u64
         seed: Option<u64>,
     },
     /// The format command
     Fmt {
-        /// Dry run flag
+        /// If true, name the files it would format and fails if applicable (dry-run)
         check: bool,
         /// Optional paths, a frame file (`*.fm`) or a package root
         paths: Vec<PathBuf>,
@@ -47,9 +49,9 @@ pub enum Command {
         /// A frame code, by its reference name (ex: "MUT-4")
         code: String,
     },
-    /// The help command
+    /// The help option
     Help,
-    /// The version command
+    /// The version option
     Version,
 }
 
@@ -67,7 +69,7 @@ pub enum UsageError {
     /// The subcommand expects an argument
     CommandExpectsArgument {
         command: &'static str,
-        arg: &'static str,
+        expected: &'static str,
     },
     /// The option expect a value
     OptionExpectsValue(&'static str),
@@ -91,8 +93,8 @@ impl fmt::Display for UsageError {
                 f,
                 "invalid seed '{seed}': expected 1 to 16 hexadecimal digits"
             ),
-            UsageError::CommandExpectsArgument { command, arg } => {
-                write!(f, "command '{command}' expects a {arg}")
+            UsageError::CommandExpectsArgument { command, expected } => {
+                write!(f, "command '{command}' expects {expected}")
             }
             UsageError::OptionExpectsValue(option) => {
                 write!(f, "option '{option}' expects a value")
@@ -110,11 +112,11 @@ impl fmt::Display for UsageError {
     }
 }
 
-/// Parse a command from an argument list
+/// Parses a command from an argument list
 ///
 /// # Errors
 ///
-/// Return a `UsageError` when the arguments or the command are invalid
+/// Returns a `UsageError` when the arguments or the command are invalid
 pub fn parse_args(args: &[OsString]) -> Result<Command, UsageError> {
     let Some((subcommand, rest)) = args.split_first() else {
         return Err(UsageError::MissingCommand);
@@ -261,7 +263,7 @@ fn parse_explain(args: &[OsString]) -> Result<Command, UsageError> {
         }), // we can convert with loss as the guard is already applied above
         [] => Err(UsageError::CommandExpectsArgument {
             command: "explain",
-            arg: "code",
+            expected: "a code",
         }),
     }
 }
@@ -703,7 +705,7 @@ mod tests {
             parse(&["explain"]),
             UsageError::CommandExpectsArgument {
                 command: "explain",
-                arg: "code",
+                expected: "a code",
             },
             "command 'explain' expects a code",
         );
