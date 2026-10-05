@@ -170,8 +170,8 @@ fn parse_build(args: &[OsString]) -> Result<Command, UsageError> {
             Some(option) if option.starts_with('-') => {
                 return Err(UsageError::UnknownOption(option.to_string()));
             }
-            Some(option) if target.is_some() => {
-                return Err(UsageError::UnexpectedArgument(option.to_string()));
+            Some(t) if target.is_some() => {
+                return Err(UsageError::UnexpectedArgument(t.to_string()));
             }
             _ => {
                 target = Some(PathBuf::from(arg));
@@ -193,7 +193,7 @@ fn parse_check(args: &[OsString]) -> Result<Command, UsageError> {
             Some(path) if target.is_none() => {
                 target = Some(PathBuf::from(path));
             }
-            _ => return Err(UnexpectedArgument(lossy_string(arg))),
+            _ => return Err(UsageError::UnexpectedArgument(lossy_string(arg))),
         }
     }
 
@@ -222,8 +222,8 @@ fn parse_test(args: &[OsString]) -> Result<Command, UsageError> {
             Some(option) if option.starts_with('-') => {
                 return Err(UsageError::UnknownOption(option.to_string()));
             }
-            Some(arg) if target.is_some() => {
-                return Err(UsageError::UnexpectedArgument(arg.to_string()));
+            Some(a) if target.is_some() => {
+                return Err(UsageError::UnexpectedArgument(a.to_string()));
             }
             _ => {
                 target = Some(PathBuf::from(arg)); // we keep paths as is, even invalids
