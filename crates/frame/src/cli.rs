@@ -68,7 +68,9 @@ pub enum UsageError {
     InvalidSeed(String),
     /// The subcommand expects an argument
     CommandExpectsArgument {
+        /// The command invoked
         command: &'static str,
+        /// The expected argument name
         expected: &'static str,
     },
     /// The option expect a value
