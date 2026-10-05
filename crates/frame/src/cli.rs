@@ -47,6 +47,8 @@ pub enum UsageError {
     UnknownOption(String),
 }
 
+impl std::error::Error for UsageError {}
+
 impl fmt::Display for UsageError {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
