@@ -257,20 +257,13 @@ fn parse_fmt(args: &[OsString]) -> Result<Command, UsageError> {
 }
 
 fn parse_explain(args: &[OsString]) -> Result<Command, UsageError> {
-    let code = match args {
-        [code, ..] if is_option(code) => {
-            return Err(UsageError::UnknownOption(lossy_string(code)));
-        }
-        [_, other, ..] => {
-            return Err(UsageError::UnexpectedArgument(lossy_string(other)));
-        }
-        [code] => Some(parse_text(code)?), // we can convert with loss as the guard is already applied above
-        [] => None,
-    };
-
-    match code {
-        Some(code) => Ok(Command::Explain { code }),
-        None => Err(UsageError::CommandExpectsArgument {
+    match args {
+        [code, ..] if is_option(code) => Err(UsageError::UnknownOption(lossy_string(code))),
+        [_, other, ..] => Err(UsageError::UnexpectedArgument(lossy_string(other))),
+        [code] => Ok(Command::Explain {
+            code: parse_text(code)?,
+        }), // we can convert with loss as the guard is already applied above
+        [] => Err(UsageError::CommandExpectsArgument {
             command: "explain",
             arg: "code",
         }),
