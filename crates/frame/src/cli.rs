@@ -339,7 +339,7 @@ mod tests {
         parse_args(&args)
     }
 
-    fn assert_fails(result: Result<Command, UsageError>, error: UsageError, message: &str) {
+    fn assert_fails_with(result: Result<Command, UsageError>, error: UsageError, message: &str) {
         assert_eq!(result, Err(error));
         assert_eq!(format!("{}", result.unwrap_err()), message,)
     }
@@ -355,7 +355,7 @@ mod tests {
 
     #[test]
     fn help_rejects_extra_args() {
-        assert_fails(
+        assert_fails_with(
             parse(&["--help", "whatever"]),
             UsageError::UnexpectedArgument("whatever".to_string()),
             "unexpected argument 'whatever'",
@@ -369,7 +369,7 @@ mod tests {
 
     #[test]
     fn version_rejects_extra_args() {
-        assert_fails(
+        assert_fails_with(
             parse(&["--version", "whatever"]),
             UsageError::UnexpectedArgument("whatever".to_string()),
             "unexpected argument 'whatever'",
@@ -378,12 +378,12 @@ mod tests {
 
     #[test]
     fn rejects_empty_args() {
-        assert_fails(parse(&[]), UsageError::MissingCommand, "missing command");
+        assert_fails_with(parse(&[]), UsageError::MissingCommand, "missing command");
     }
 
     #[test]
     fn rejects_unknown_command() {
-        assert_fails(
+        assert_fails_with(
             parse(&["compile"]),
             UsageError::UnknownCommand("compile".to_string()),
             "unknown command 'compile'",
@@ -427,7 +427,7 @@ mod tests {
 
     #[test]
     fn run_rejects_option_before_target() {
-        assert_fails(
+        assert_fails_with(
             parse(&["run", "--fast", "x.fm"]),
             UsageError::UnknownOption("--fast".to_string()),
             "unknown option '--fast'",
@@ -469,7 +469,7 @@ mod tests {
 
     #[test]
     fn build_rejects_ouput_with_no_value() {
-        assert_fails(
+        assert_fails_with(
             parse(&["build", "-o"]),
             UsageError::OptionExpectsValue("-o"),
             "option '-o' expects a value",
@@ -478,7 +478,7 @@ mod tests {
 
     #[test]
     fn build_rejects_unknown_option() {
-        assert_fails(
+        assert_fails_with(
             parse(&["build", "--verbose"]),
             UsageError::UnknownOption("--verbose".to_string()),
             "unknown option '--verbose'",
@@ -487,7 +487,7 @@ mod tests {
 
     #[test]
     fn build_rejects_repeated_option() {
-        assert_fails(
+        assert_fails_with(
             parse(&["build", "-o", "a", "-o", "b"]),
             UsageError::RepeatedOption("-o"),
             "option '-o' is repeated",
@@ -496,7 +496,7 @@ mod tests {
 
     #[test]
     fn build_rejects_repeated_targets() {
-        assert_fails(
+        assert_fails_with(
             parse(&["build", "a.fm", "b.fm"]),
             UsageError::UnexpectedArgument("b.fm".to_string()),
             "unexpected argument 'b.fm'",
@@ -520,7 +520,7 @@ mod tests {
 
     #[test]
     fn check_rejects_repeated_targets() {
-        assert_fails(
+        assert_fails_with(
             parse(&["check", "a.fm", "b.fm"]),
             UsageError::UnexpectedArgument("b.fm".to_string()),
             "unexpected argument 'b.fm'",
@@ -573,7 +573,7 @@ mod tests {
     #[test]
     fn test_rejects_invalid_seeds() {
         for seed in ["", "7c1f03a9e4b2d8562", "+ff", "0xff", "g1"] {
-            assert_fails(
+            assert_fails_with(
                 parse(&["test", "--seed", seed]),
                 UsageError::InvalidSeed(seed.to_string()),
                 format!("invalid seed '{seed}': expected 1 to 16 hexadecimal digits").as_str(),
@@ -583,7 +583,7 @@ mod tests {
 
     #[test]
     fn test_rejects_unknown_option() {
-        assert_fails(
+        assert_fails_with(
             parse(&["test", "--verbose"]),
             UsageError::UnknownOption("--verbose".to_string()),
             "unknown option '--verbose'",
@@ -592,7 +592,7 @@ mod tests {
 
     #[test]
     fn test_rejects_seed_with_no_value() {
-        assert_fails(
+        assert_fails_with(
             parse(&["test", "--seed"]),
             UsageError::OptionExpectsValue("--seed"),
             "option '--seed' expects a value",
@@ -601,7 +601,7 @@ mod tests {
 
     #[test]
     fn test_rejects_name_with_no_value_fails() {
-        assert_fails(
+        assert_fails_with(
             parse(&["test", "--name"]),
             UsageError::OptionExpectsValue("--name"),
             "option '--name' expects a value",
@@ -610,7 +610,7 @@ mod tests {
 
     #[test]
     fn test_rejects_repeated_names() {
-        assert_fails(
+        assert_fails_with(
             parse(&["test", "--name", "a.fm", "--name", "b.fm"]),
             UsageError::RepeatedOption("--name"),
             "option '--name' is repeated",
@@ -619,7 +619,7 @@ mod tests {
 
     #[test]
     fn test_rejects_repeated_targets() {
-        assert_fails(
+        assert_fails_with(
             parse(&["test", "a.fm", "b.fm"]),
             UsageError::UnexpectedArgument("b.fm".to_string()),
             "unexpected argument 'b.fm'",
@@ -628,7 +628,7 @@ mod tests {
 
     #[test]
     fn test_rejects_repeated_seeds() {
-        assert_fails(
+        assert_fails_with(
             parse(&["test", "--seed", "77", "--seed", "77"]),
             UsageError::RepeatedOption("--seed"),
             "option '--seed' is repeated",
@@ -683,7 +683,7 @@ mod tests {
     #[test]
     fn fmt_rejects_repeated_flags() {
         let result = parse(&["fmt", "--check", "--check"]);
-        assert_fails(
+        assert_fails_with(
             result,
             UsageError::RepeatedOption("--check"),
             "option '--check' is repeated",
@@ -692,7 +692,7 @@ mod tests {
 
     #[test]
     fn fmt_rejects_unknown_option() {
-        assert_fails(
+        assert_fails_with(
             parse(&["fmt", "--verbose"]),
             UsageError::UnknownOption("--verbose".to_string()),
             "unknown option '--verbose'",
@@ -711,7 +711,7 @@ mod tests {
 
     #[test]
     fn explain_rejects_no_code() {
-        assert_fails(
+        assert_fails_with(
             parse(&["explain"]),
             UsageError::CommandExpectsArgument {
                 command: "explain",
@@ -723,7 +723,7 @@ mod tests {
 
     #[test]
     fn explain_rejects_repeated_code() {
-        assert_fails(
+        assert_fails_with(
             parse(&["explain", "MUT-4", "MUT-5"]),
             UsageError::UnexpectedArgument("MUT-5".to_string()),
             "unexpected argument 'MUT-5'",
@@ -732,7 +732,7 @@ mod tests {
 
     #[test]
     fn check_rejects_unknown_option() {
-        assert_fails(
+        assert_fails_with(
             parse(&["check", "--verbose"]),
             UsageError::UnknownOption("--verbose".to_string()),
             "unknown option '--verbose'",
@@ -747,7 +747,7 @@ mod tests {
         let non_utf8 = invalid_utf8_os_string();
         let args = vec![non_utf8.clone()];
 
-        assert_fails(
+        assert_fails_with(
             parse_args(&args),
             UsageError::InvalidUtf8(lossy_string(&non_utf8)),
             format!(
@@ -768,7 +768,7 @@ mod tests {
 
         args.push(non_utf8.clone());
 
-        assert_fails(
+        assert_fails_with(
             parse_args(&args),
             UsageError::InvalidUtf8(lossy_string(&non_utf8)),
             format!(
@@ -789,7 +789,7 @@ mod tests {
 
         args.push(non_utf8.clone());
 
-        assert_fails(
+        assert_fails_with(
             parse_args(&args),
             UsageError::InvalidUtf8(lossy_string(&non_utf8)),
             format!(
