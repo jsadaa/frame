@@ -351,245 +351,174 @@ fn is_valid_utf8(arg: &OsStr) -> bool {
 
 #[cfg(test)]
 mod tests {
-    use crate::cli::{self, Command};
-    use std::{ffi::OsString, path::PathBuf};
+    use super::{Command, OsString, PathBuf, UsageError, parse_args};
 
-    fn args_to_os_strings(args: &[&str]) -> Vec<OsString> {
-        args.iter().map(OsString::from).collect()
+    fn parse(args: &[&str]) -> Result<Command, UsageError> {
+        let args: Vec<OsString> = args.iter().map(OsString::from).collect();
+        parse_args(&args)
+    }
+
+    fn assert_fails(result: Result<Command, UsageError>, error: UsageError, message: &str) {
+        assert_eq!(result, Err(error));
+        assert_eq!(format!("{}", result.unwrap_err()), message,)
     }
 
     #[test]
     fn test_help() {
-        let args = args_to_os_strings(&["help"]);
-        let command = cli::parse_args(&args);
-        assert_eq!(command, Ok(Command::Help));
+        assert_eq!(parse(&["--help"]), Ok(Command::Help));
     }
 
     #[test]
     fn test_version() {
-        let args = args_to_os_strings(&["version"]);
-        let command = cli::parse_args(&args);
-        assert_eq!(command, Ok(Command::Version));
+        assert_eq!(parse(&["--version"]), Ok(Command::Version));
     }
 
     #[test]
     fn test_help_with_extra_arg_fails() {
-        let args = args_to_os_strings(&["help", "whatever"]);
-        let command = cli::parse_args(&args);
-
-        assert_eq!(
-            command,
-            Err(cli::UsageError::CommandTakesNoArg("help".to_string()))
+        assert_fails(
+            parse(&["--help", "whatever"]),
+            UsageError::UnexpectedArgument("whatever".to_string()),
+            "unexpected argument 'whatever'",
         );
-
-        assert_eq!(
-            format!("{}", command.unwrap_err()),
-            "command \"help\" takes no arguments",
-        )
     }
 
     #[test]
     fn test_parse_without_argument_fails() {
-        let args = args_to_os_strings(&[]);
-        let command = cli::parse_args(&args);
-
-        assert_eq!(command, Err(cli::UsageError::MissingCommand));
-
-        assert_eq!(format!("{}", command.unwrap_err()), "missing command",)
+        assert_fails(parse(&[]), UsageError::MissingCommand, "missing command");
     }
 
     #[test]
     fn test_unknown_command_fails() {
-        let args = args_to_os_strings(&["compile"]);
-        let command = cli::parse_args(&args);
-
-        assert_eq!(
-            command,
-            Err(cli::UsageError::UnknownCommand("compile".to_string()))
+        assert_fails(
+            parse(&["compile"]),
+            UsageError::UnknownCommand("compile".to_string()),
+            "unknown command 'compile'",
         );
-
-        assert_eq!(
-            format!("{}", command.unwrap_err()),
-            "unknown command: \"compile\"",
-        )
     }
 
     #[test]
     fn test_run_without_args() {
-        let args = args_to_os_strings(&["run"]);
-        let command = cli::parse_args(&args);
-        let empty_vec: Vec<OsString> = Vec::new();
+        let program_args: Vec<OsString> = Vec::new();
 
         assert_eq!(
-            command,
+            parse(&["run"]),
             Ok(Command::Run {
                 target: None,
-                args: empty_vec
+                program_args,
             })
         );
     }
 
     #[test]
     fn test_run_with_args() {
-        let args = args_to_os_strings(&["run", "hello.fm", "Alice"]);
-        let command = cli::parse_args(&args);
-        let path = PathBuf::from("hello.fm");
-
         assert_eq!(
-            command,
+            parse(&["run", "hello.fm", "Alice"]),
             Ok(Command::Run {
-                target: Some(path),
-                args: args_to_os_strings(&["Alice"]),
+                target: Some(PathBuf::from("hello.fm")),
+                program_args: ["Alice"].map(OsString::from).to_vec(),
             })
         );
     }
 
     #[test]
     fn test_run_with_args_looking_like_options() {
-        let args = args_to_os_strings(&["run", ".", "logs", "7", "--dry-run"]);
-        let command = cli::parse_args(&args);
-        let path = PathBuf::from(".");
-
         assert_eq!(
-            command,
+            parse(&["run", ".", "logs", "7", "--dry-run"]),
             Ok(Command::Run {
-                target: Some(path),
-                args: args_to_os_strings(&["logs", "7", "--dry-run"]),
+                target: Some(PathBuf::from(".")),
+                program_args: ["logs", "7", "--dry-run"].map(OsString::from).to_vec(),
             })
         );
     }
 
     #[test]
     fn test_run_with_option_before_target_fails() {
-        let args = args_to_os_strings(&["run", "--fast", "x.fm"]);
-        let command = cli::parse_args(&args);
-
-        assert_eq!(
-            command,
-            Err(cli::UsageError::OptionBeforeTarget(
-                "run".to_string(),
-                "--fast".to_string()
-            ))
+        assert_fails(
+            parse(&["run", "--fast", "x.fm"]),
+            UsageError::UnknownOption("--fast".to_string()),
+            "unknown option '--fast'",
         );
-
-        assert_eq!(
-            format!("{}", command.unwrap_err()),
-            "command \"run\" needs a target before option --fast",
-        )
     }
 
     #[test]
     fn test_build_with_ouput_and_no_target() {
-        let args = args_to_os_strings(&["build", "-o", "out"]);
-        let command = cli::parse_args(&args);
-        let out = PathBuf::from("out");
-
         assert_eq!(
-            command,
+            parse(&["build", "-o", "out"]),
             Ok(Command::Build {
                 target: None,
-                out: Some(out)
+                output: Some(PathBuf::from("out")),
             })
         );
     }
 
     #[test]
     fn test_build_with_ouput_and_target() {
-        let args = args_to_os_strings(&["build", "app.fm", "-o", "out"]);
-        let command = cli::parse_args(&args);
-        let target = PathBuf::from("app.fm");
-        let out = PathBuf::from("out");
-
         assert_eq!(
-            command,
+            parse(&["build", "app.fm", "-o", "out"]),
             Ok(Command::Build {
-                target: Some(target),
-                out: Some(out)
+                target: Some(PathBuf::from("app.fm")),
+                output: Some(PathBuf::from("out"))
             })
         );
     }
 
     #[test]
     fn test_build_with_ouput_before_target() {
-        let args = args_to_os_strings(&["build", "-o", "out", "app.fm"]);
-        let command = cli::parse_args(&args);
-        let target = PathBuf::from("app.fm");
-        let out = PathBuf::from("out");
-
         assert_eq!(
-            command,
+            parse(&["build", "-o", "out", "app.fm"]),
             Ok(Command::Build {
-                target: Some(target),
-                out: Some(out)
+                target: Some(PathBuf::from("app.fm")),
+                output: Some(PathBuf::from("out")),
             })
         );
     }
 
     #[test]
     fn test_build_with_ouput_and_no_value_fails() {
-        let args = args_to_os_strings(&["build", "-o"]);
-        let command = cli::parse_args(&args);
-
-        assert_eq!(
-            command,
-            Err(cli::UsageError::OptionExpectValue("-o".to_string()))
+        assert_fails(
+            parse(&["build", "-o"]),
+            UsageError::OptionExpectsValue("-o"),
+            "option '-o' expects a value",
         );
-
-        assert_eq!(
-            format!("{}", command.unwrap_err()),
-            "option \"-o\" expects a value",
-        )
     }
 
     #[test]
-    fn test_build_with_duplicate_outputs_fails() {
-        let args = args_to_os_strings(&["build", "-o", "a", "-o", "b"]);
-        let command = cli::parse_args(&args);
-
-        assert_eq!(
-            command,
-            Err(cli::UsageError::DuplicatedOption("-o".to_string()))
+    fn test_build_with_repeated_option_fails() {
+        assert_fails(
+            parse(&["build", "-o", "a", "-o", "b"]),
+            UsageError::RepeatedOption("-o"),
+            "option '-o' is repeated",
         );
-
-        assert_eq!(
-            format!("{}", command.unwrap_err()),
-            "option \"-o\" is duplicated",
-        )
     }
 
     #[test]
     fn test_check_with_target() {
-        let args = args_to_os_strings(&["check", "app.fm"]);
-        let command = cli::parse_args(&args);
-        let out = PathBuf::from("app.fm");
-
-        assert_eq!(command, Ok(Command::Check { target: Some(out) }));
+        assert_eq!(
+            parse(&["check", "app.fm"]),
+            Ok(Command::Check {
+                target: Some(PathBuf::from("app.fm"))
+            })
+        );
     }
 
     #[test]
     fn test_check_without_target() {
-        let args = args_to_os_strings(&["check"]);
-        let command = cli::parse_args(&args);
-
-        assert_eq!(command, Ok(Command::Check { target: None }));
+        assert_eq!(parse(&["check"]), Ok(Command::Check { target: None }));
     }
 
     #[test]
     fn test_check_with_duplicated_target_fails() {
-        let args = args_to_os_strings(&["check", "a.fm", "b.fm"]);
-        let command = cli::parse_args(&args);
-
-        assert_eq!(command, Err(cli::UsageError::DuplicatedTarget));
-        assert_eq!(format!("{}", command.unwrap_err()), "target is duplicated",)
+        assert_fails(
+            parse(&["check", "a.fm", "b.fm"]),
+            UsageError::UnexpectedArgument("b.fm".to_string()),
+            "unexpected argument 'b.fm'",
+        );
     }
 
     #[test]
     fn test_test() {
-        let args = args_to_os_strings(&["test", "--name", "parse", "--seed", "7c1f03a9e4b2d856"]);
-        let command = cli::parse_args(&args);
-
         assert_eq!(
-            command,
+            parse(&["test", "--name", "parse", "--seed", "7c1f03a9e4b2d856"]),
             Ok(Command::Test {
                 target: None,
                 filter: Some("parse".to_string()),
@@ -600,11 +529,8 @@ mod tests {
 
     #[test]
     fn test_test_name_option_takes_next_arg() {
-        let args = args_to_os_strings(&["test", "--name", "--seed"]);
-        let command = cli::parse_args(&args);
-
         assert_eq!(
-            command,
+            parse(&["test", "--name", "--seed"]),
             Ok(Command::Test {
                 target: None,
                 filter: Some("--seed".to_string()),
@@ -614,12 +540,9 @@ mod tests {
     }
 
     #[test]
-    fn test_test_uppercas_seed() {
-        let args = args_to_os_strings(&["test", "--seed", "FF"]);
-        let command = cli::parse_args(&args);
-
+    fn test_test_uppercase_seed() {
         assert_eq!(
-            command,
+            parse(&["test", "--seed", "FF"]),
             Ok(Command::Test {
                 target: None,
                 filter: None,
@@ -630,65 +553,21 @@ mod tests {
 
     #[test]
     fn test_test_with_invalid_seeds_fails() {
-        let invalid: Vec<&str> = vec!["", "7c1f03a9e4b2d8562", "+ff", "0xff", "g1"];
-
-        for seed in invalid {
-            let args = args_to_os_strings(&["test", "--seed", seed]);
-            let command = cli::parse_args(&args);
-
-            assert_eq!(
-                command,
-                Err(cli::UsageError::InvalidHexadecimal(seed.to_string()))
+        for seed in ["", "7c1f03a9e4b2d8562", "+ff", "0xff", "g1"] {
+            assert_fails(
+                parse(&["test", "--seed", seed]),
+                UsageError::InvalidSeed(seed.to_string()),
+                format!("invalid seed '{seed}': expected 1 to 16 hexadecimal digits").as_str(),
             );
-
-            assert_eq!(
-                format!("{}", command.unwrap_err()),
-                format!("invalid hexadecimal string: \"{seed}\""),
-            )
         }
     }
 
     #[test]
     fn test_fmt() {
-        let args = args_to_os_strings(&["fmt"]);
-        let command = cli::parse_args(&args);
-        let empty_vec: Vec<PathBuf> = Vec::new();
+        let paths: Vec<PathBuf> = Vec::new();
 
         assert_eq!(
-            command,
-            Ok(Command::Fmt {
-                check: false,
-                paths: empty_vec
-            })
-        );
-    }
-
-    #[test]
-    fn test_fmt_with_check_flag() {
-        let args = args_to_os_strings(&["fmt", "--check"]);
-        let command = cli::parse_args(&args);
-        let empty_vec: Vec<PathBuf> = Vec::new();
-
-        assert_eq!(
-            command,
-            Ok(Command::Fmt {
-                check: true,
-                paths: empty_vec
-            })
-        );
-    }
-
-    #[test]
-    fn test_fmt_paths_only() {
-        let args = args_to_os_strings(&["fmt", "a.fm", "src"]);
-        let command = cli::parse_args(&args);
-        let paths: Vec<PathBuf> = args_to_os_strings(&["a.fm", "src"])
-            .into_iter()
-            .map(PathBuf::from)
-            .collect();
-
-        assert_eq!(
-            command,
+            parse(&["fmt"]),
             Ok(Command::Fmt {
                 check: false,
                 paths,
@@ -697,40 +576,51 @@ mod tests {
     }
 
     #[test]
-    fn test_fmt_with_path_before_flag() {
-        let args = args_to_os_strings(&["fmt", "src", "--check"]);
-        let command = cli::parse_args(&args);
-        let paths: Vec<PathBuf> = args_to_os_strings(&["src"])
-            .into_iter()
-            .map(PathBuf::from)
-            .collect();
+    fn test_fmt_with_check_flag() {
+        let paths: Vec<PathBuf> = Vec::new();
 
-        assert_eq!(command, Ok(Command::Fmt { check: true, paths }));
+        assert_eq!(
+            parse(&["fmt", "--check"]),
+            Ok(Command::Fmt { check: true, paths })
+        );
+    }
+
+    #[test]
+    fn test_fmt_paths_only() {
+        assert_eq!(
+            parse(&["fmt", "a.fm", "src"]),
+            Ok(Command::Fmt {
+                check: false,
+                paths: ["a.fm", "src"].map(PathBuf::from).to_vec(),
+            })
+        );
+    }
+
+    #[test]
+    fn test_fmt_with_path_before_flag() {
+        assert_eq!(
+            parse(&["fmt", "src", "--check"]),
+            Ok(Command::Fmt {
+                check: true,
+                paths: ["src"].map(PathBuf::from).to_vec()
+            })
+        );
     }
 
     #[test]
     fn test_fmt_with_two_flags_fails() {
-        let args = args_to_os_strings(&["fmt", "--check", "--check"]);
-        let command = cli::parse_args(&args);
-
-        assert_eq!(
-            command,
-            Err(cli::UsageError::DuplicatedOption("--check".to_string()))
+        let result = parse(&["fmt", "--check", "--check"]);
+        assert_fails(
+            result,
+            UsageError::RepeatedOption("--check"),
+            "option '--check' is repeated",
         );
-
-        assert_eq!(
-            format!("{}", command.unwrap_err()),
-            "option \"--check\" is duplicated",
-        )
     }
 
     #[test]
     fn test_explain() {
-        let args = args_to_os_strings(&["explain", "MUT-4"]);
-        let command = cli::parse_args(&args);
-
         assert_eq!(
-            command,
+            parse(&["explain", "MUT-4"]),
             Ok(Command::Explain {
                 code: "MUT-4".to_string()
             })
@@ -738,41 +628,33 @@ mod tests {
     }
 
     #[test]
-    fn test_explain_without_code() {
-        let args = args_to_os_strings(&["explain"]);
-        let command = cli::parse_args(&args);
-
-        assert_eq!(
-            command,
-            Err(cli::UsageError::CommandExpectArg(
-                "explain".to_string(),
-                "code".to_string(),
-            ))
+    fn test_explain_without_code_fails() {
+        assert_fails(
+            parse(&["explain"]),
+            UsageError::CommandExpectsArgument {
+                command: "explain",
+                arg: "code",
+            },
+            "command 'explain' expects a code",
         );
     }
 
     #[test]
     fn test_explain_with_two_code_fails() {
-        let args = args_to_os_strings(&["explain", "MUT-4", "MUT-5"]);
-        let command = cli::parse_args(&args);
-
-        assert_eq!(command, Err(cli::UsageError::DuplicatedCode));
+        assert_fails(
+            parse(&["explain", "MUT-4", "MUT-5"]),
+            UsageError::UnexpectedArgument("MUT-5".to_string()),
+            "unexpected argument 'MUT-5'",
+        );
     }
 
     #[test]
     fn test_check_with_unknown_option_fails() {
-        let args = args_to_os_strings(&["check", "--verbose"]);
-        let command = cli::parse_args(&args);
-
-        assert_eq!(
-            command,
-            Err(cli::UsageError::UnknownOption("--verbose".to_string()))
+        assert_fails(
+            parse(&["check", "--verbose"]),
+            UsageError::UnknownOption("--verbose".to_string()),
+            "unknown option '--verbose'",
         );
-
-        assert_eq!(
-            format!("{}", command.unwrap_err()),
-            "unknown option: --verbose",
-        )
     }
 
     #[test]
@@ -781,24 +663,18 @@ mod tests {
         use std::os::unix::ffi::OsStringExt;
 
         let non_utf8 = OsString::from_vec(vec![0x66, 0xFF]);
-        let mut args = args_to_os_strings(&["run", "a.fm"]);
+        let mut args: Vec<OsString> = ["run", "a.fm"].iter().map(OsString::from).collect();
+
         args.push(non_utf8.clone());
 
-        let command = cli::parse_args(&args);
-
-        assert_eq!(
-            command,
-            Err(cli::UsageError::InvalidUtf8(
-                non_utf8.to_string_lossy().to_string(),
-            ))
-        );
-
-        assert_eq!(
-            format!("{}", command.unwrap_err()),
+        assert_fails(
+            parse_args(&args),
+            UsageError::InvalidUtf8(non_utf8.to_string_lossy().to_string()),
             format!(
-                "invalid UTF-8: \"{}\"",
-                non_utf8.to_string_lossy().to_string()
-            ),
-        )
+                "argument '{}' is not valid UTF-8",
+                non_utf8.to_string_lossy(),
+            )
+            .as_str(),
+        );
     }
 }
