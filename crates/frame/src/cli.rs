@@ -543,7 +543,7 @@ mod tests {
             ]),
             Ok(Command::Test {
                 target: Some(PathBuf::from("test.fm")),
-                filter: Some("parse".to_string()),
+                name: Some("parse".to_string()),
                 seed: Some(0x7c1f03a9e4b2d856),
             })
         );
@@ -555,7 +555,7 @@ mod tests {
             parse(&["test", "--name", "--seed"]),
             Ok(Command::Test {
                 target: None,
-                filter: Some("--seed".to_string()),
+                name: Some("--seed".to_string()),
                 seed: None,
             })
         );
@@ -567,7 +567,7 @@ mod tests {
             parse(&["test", "--seed", "FF"]),
             Ok(Command::Test {
                 target: None,
-                filter: None,
+                name: None,
                 seed: Some(255),
             })
         );
