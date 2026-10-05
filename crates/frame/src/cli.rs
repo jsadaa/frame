@@ -270,6 +270,9 @@ fn parse_fmt(args: &[OsString]) -> Result<Command, UsageError> {
                 return Err(UsageError::RepeatedOption("--check"));
             }
             Some("--check") => check = true,
+            Some(unknown) if is_option(arg) => {
+                return Err(UsageError::UnknownOption(unknown.to_string()));
+            }
             _ => paths.push(PathBuf::from(arg)),
         }
     }
@@ -351,6 +354,7 @@ fn is_valid_utf8(arg: &OsStr) -> bool {
 #[cfg(test)]
 mod tests {
     use super::{Command, OsString, PathBuf, UsageError, parse_args};
+    use std::os::unix::ffi::OsStringExt;
 
     fn parse(args: &[&str]) -> Result<Command, UsageError> {
         let args: Vec<OsString> = args.iter().map(OsString::from).collect();
@@ -362,9 +366,22 @@ mod tests {
         assert_eq!(format!("{}", result.unwrap_err()), message,)
     }
 
+    fn invalid_utf8_os_string() -> OsString {
+        OsString::from_vec(vec![0x66, 0xFF])
+    }
+
     #[test]
     fn test_help() {
         assert_eq!(parse(&["--help"]), Ok(Command::Help));
+    }
+
+    #[test]
+    fn test_help_with_extra_arg_fails() {
+        assert_fails(
+            parse(&["--help", "whatever"]),
+            UsageError::UnexpectedArgument("whatever".to_string()),
+            "unexpected argument 'whatever'",
+        );
     }
 
     #[test]
@@ -373,9 +390,9 @@ mod tests {
     }
 
     #[test]
-    fn test_help_with_extra_arg_fails() {
+    fn test_version_with_extra_arg_fails() {
         assert_fails(
-            parse(&["--help", "whatever"]),
+            parse(&["--version", "whatever"]),
             UsageError::UnexpectedArgument("whatever".to_string()),
             "unexpected argument 'whatever'",
         );
@@ -482,11 +499,29 @@ mod tests {
     }
 
     #[test]
+    fn test_build_with_unknown_option_fails() {
+        assert_fails(
+            parse(&["build", "--verbose"]),
+            UsageError::UnknownOption("--verbose".to_string()),
+            "unknown option '--verbose'",
+        );
+    }
+
+    #[test]
     fn test_build_with_repeated_option_fails() {
         assert_fails(
             parse(&["build", "-o", "a", "-o", "b"]),
             UsageError::RepeatedOption("-o"),
             "option '-o' is repeated",
+        );
+    }
+
+    #[test]
+    fn test_build_with_two_targets_fails() {
+        assert_fails(
+            parse(&["build", "a.fm", "b.fm"]),
+            UsageError::UnexpectedArgument("b.fm".to_string()),
+            "unexpected argument 'b.fm'",
         );
     }
 
@@ -517,9 +552,16 @@ mod tests {
     #[test]
     fn test_test() {
         assert_eq!(
-            parse(&["test", "--name", "parse", "--seed", "7c1f03a9e4b2d856"]),
+            parse(&[
+                "test",
+                "test.fm",
+                "--name",
+                "parse",
+                "--seed",
+                "7c1f03a9e4b2d856"
+            ]),
             Ok(Command::Test {
-                target: None,
+                target: Some(PathBuf::from("test.fm")),
                 filter: Some("parse".to_string()),
                 seed: Some(0x7c1f03a9e4b2d856),
             })
@@ -559,6 +601,60 @@ mod tests {
                 format!("invalid seed '{seed}': expected 1 to 16 hexadecimal digits").as_str(),
             );
         }
+    }
+
+    #[test]
+    fn test_test_with_unknown_option_fails() {
+        assert_fails(
+            parse(&["test", "--verbose"]),
+            UsageError::UnknownOption("--verbose".to_string()),
+            "unknown option '--verbose'",
+        );
+    }
+
+    #[test]
+    fn test_test_with_seed_and_no_value_fails() {
+        assert_fails(
+            parse(&["test", "--seed"]),
+            UsageError::OptionExpectsValue("--seed"),
+            "option '--seed' expects a value",
+        );
+    }
+
+    #[test]
+    fn test_test_with_name_and_no_value_fails() {
+        assert_fails(
+            parse(&["test", "--name"]),
+            UsageError::OptionExpectsValue("--name"),
+            "option '--name' expects a value",
+        );
+    }
+
+    #[test]
+    fn test_test_with_two_names_fails() {
+        assert_fails(
+            parse(&["test", "--name", "a.fm", "--name", "b.fm"]),
+            UsageError::RepeatedOption("--name"),
+            "option '--name' is repeated",
+        );
+    }
+
+    #[test]
+    fn test_test_with_two_targets_fails() {
+        assert_fails(
+            parse(&["test", "a.fm", "b.fm"]),
+            UsageError::UnexpectedArgument("b.fm".to_string()),
+            "unexpected argument 'b.fm'",
+        );
+    }
+
+    #[test]
+    fn test_test_with_two_seed_fails() {
+        assert_fails(
+            parse(&["test", "--seed", "77", "--seed", "77"]),
+            UsageError::RepeatedOption("--seed"),
+            "option '--seed' is repeated",
+        );
     }
 
     #[test]
@@ -617,6 +713,15 @@ mod tests {
     }
 
     #[test]
+    fn test_fmt_with_unknown_option_fails() {
+        assert_fails(
+            parse(&["fmt", "--verbose"]),
+            UsageError::UnknownOption("--verbose".to_string()),
+            "unknown option '--verbose'",
+        );
+    }
+
+    #[test]
     fn test_explain() {
         assert_eq!(
             parse(&["explain", "MUT-4"]),
@@ -658,11 +763,64 @@ mod tests {
 
     #[test]
     #[cfg(unix)]
-    fn test_program_with_non_utf_8_args_fails() {
-        use std::os::unix::ffi::OsStringExt;
-
-        let non_utf8 = OsString::from_vec(vec![0x66, 0xFF]);
+    fn test_run_with_non_utf_8_program_args_fails() {
+        let non_utf8 = invalid_utf8_os_string();
         let mut args: Vec<OsString> = ["run", "a.fm"].iter().map(OsString::from).collect();
+
+        args.push(non_utf8.clone());
+
+        assert_fails(
+            parse_args(&args),
+            UsageError::InvalidUtf8(non_utf8.to_string_lossy().to_string()),
+            format!(
+                "argument '{}' is not valid UTF-8",
+                non_utf8.to_string_lossy(),
+            )
+            .as_str(),
+        );
+    }
+
+    #[test]
+    #[cfg(unix)]
+    fn test_non_utf8_subcommand_fails() {
+        let non_utf8 = invalid_utf8_os_string();
+        let args = vec![non_utf8.clone()];
+
+        assert_fails(
+            parse_args(&args),
+            UsageError::InvalidUtf8(non_utf8.to_string_lossy().to_string()),
+            format!(
+                "argument '{}' is not valid UTF-8",
+                non_utf8.to_string_lossy(),
+            )
+            .as_str(),
+        );
+    }
+
+    #[test]
+    #[cfg(unix)]
+    fn test_test_with_non_utf8_name_fails() {
+        let non_utf8 = invalid_utf8_os_string();
+        let mut args: Vec<OsString> = ["test", "--name"].iter().map(OsString::from).collect();
+
+        args.push(non_utf8.clone());
+
+        assert_fails(
+            parse_args(&args),
+            UsageError::InvalidUtf8(non_utf8.to_string_lossy().to_string()),
+            format!(
+                "argument '{}' is not valid UTF-8",
+                non_utf8.to_string_lossy(),
+            )
+            .as_str(),
+        );
+    }
+
+    #[test]
+    #[cfg(unix)]
+    fn test_explain_with_non_utf8_code_fails() {
+        let non_utf8 = invalid_utf8_os_string();
+        let mut args: Vec<OsString> = ["explain"].iter().map(OsString::from).collect();
 
         args.push(non_utf8.clone());
 
