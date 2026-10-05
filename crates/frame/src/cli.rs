@@ -31,7 +31,7 @@ pub enum Command {
 }
 
 /// A usage error from the input args
-#[derive(Debug, PartialEq)]
+#[derive(Debug, PartialEq, Eq)]
 pub enum UsageError {
     InvalidUtf8(String),
     MissingCommand,
