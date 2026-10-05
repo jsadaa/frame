@@ -118,16 +118,15 @@ fn parse_run(args: &[OsString]) -> Result<Command, UsageError> {
             ));
         }
         [target] => (Some(PathBuf::from(target)), Vec::new()),
-        [target, program_args @ ..] if program_args.iter().any(|a| a.to_str().is_none()) => {
+        [target, program_args @ ..] => {
             for arg in program_args {
-                if arg.to_str().is_none() {
+                if !is_valid_utf8(arg) {
                     return Err(UsageError::InvalidUtf8(arg.to_string_lossy().to_string()));
                 }
             }
 
-            unreachable!("at this step, a program arg have already failed")
+            (Some(PathBuf::from(target)), program_args.to_vec())
         }
-        [target, program_args @ ..] => (Some(PathBuf::from(target)), program_args.to_vec()),
         _ => (None, Vec::new()),
     };
 
