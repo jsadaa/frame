@@ -322,7 +322,6 @@ fn is_option(arg: &OsStr) -> bool {
 #[cfg(test)]
 mod tests {
     use super::{Command, OsString, PathBuf, UsageError, parse_args};
-    use std::os::unix::ffi::OsStringExt;
 
     fn parse(args: &[&str]) -> Result<Command, UsageError> {
         let args: Vec<OsString> = args.iter().map(OsString::from).collect();
@@ -332,10 +331,6 @@ mod tests {
     fn assert_fails_with(result: Result<Command, UsageError>, error: UsageError, message: &str) {
         assert_eq!(result, Err(error));
         assert_eq!(format!("{}", result.unwrap_err()), message,)
-    }
-
-    fn invalid_utf8_os_string() -> OsString {
-        OsString::from_vec(vec![0x66, 0xFF])
     }
 
     #[test]
@@ -425,7 +420,7 @@ mod tests {
     }
 
     #[test]
-    fn build_accepts_ouput_and_no_target() {
+    fn build_accepts_output_and_no_target() {
         assert_eq!(
             parse(&["build", "-o", "out"]),
             Ok(Command::Build {
@@ -436,7 +431,7 @@ mod tests {
     }
 
     #[test]
-    fn build_accepts_ouput_and_target() {
+    fn build_accepts_output_and_target() {
         assert_eq!(
             parse(&["build", "app.fm", "-o", "out"]),
             Ok(Command::Build {
@@ -447,7 +442,7 @@ mod tests {
     }
 
     #[test]
-    fn build_accepts_ouput_before_target() {
+    fn build_accepts_output_before_target() {
         assert_eq!(
             parse(&["build", "-o", "out", "app.fm"]),
             Ok(Command::Build {
@@ -458,7 +453,7 @@ mod tests {
     }
 
     #[test]
-    fn build_rejects_ouput_with_no_value() {
+    fn build_rejects_output_with_no_value() {
         assert_fails_with(
             parse(&["build", "-o"]),
             UsageError::OptionExpectsValue("-o"),
@@ -485,7 +480,7 @@ mod tests {
     }
 
     #[test]
-    fn build_rejects_repeated_targets() {
+    fn build_rejects_second_targets() {
         assert_fails_with(
             parse(&["build", "a.fm", "b.fm"]),
             UsageError::UnexpectedArgument("b.fm".to_string()),
@@ -509,7 +504,7 @@ mod tests {
     }
 
     #[test]
-    fn check_rejects_repeated_targets() {
+    fn check_rejects_second_targets() {
         assert_fails_with(
             parse(&["check", "a.fm", "b.fm"]),
             UsageError::UnexpectedArgument("b.fm".to_string()),
@@ -518,7 +513,7 @@ mod tests {
     }
 
     #[test]
-    fn test_accepts_every_options() {
+    fn test_accepts_every_option() {
         assert_eq!(
             parse(&[
                 "test",
@@ -608,7 +603,7 @@ mod tests {
     }
 
     #[test]
-    fn test_rejects_repeated_targets() {
+    fn test_rejects_second_targets() {
         assert_fails_with(
             parse(&["test", "a.fm", "b.fm"]),
             UsageError::UnexpectedArgument("b.fm".to_string()),
@@ -712,7 +707,7 @@ mod tests {
     }
 
     #[test]
-    fn explain_rejects_repeated_code() {
+    fn explain_rejects_second_code() {
         assert_fails_with(
             parse(&["explain", "MUT-4", "MUT-5"]),
             UsageError::UnexpectedArgument("MUT-5".to_string()),
@@ -729,60 +724,55 @@ mod tests {
         );
     }
 
-    #[test]
     #[cfg(unix)]
-    fn rejects_non_utf8_subcommand() {
-        use crate::cli::lossy_string;
+    mod non_utf8 {
+        use super::super::{OsString, UsageError, lossy_string, parse_args};
+        use super::assert_fails_with;
+        use std::os::unix::ffi::OsStringExt;
 
-        let non_utf8 = invalid_utf8_os_string();
-        let args = vec![non_utf8.clone()];
+        fn args_list_with_invalid_utf8(args: &[&str]) -> Vec<OsString> {
+            let non_utf8 = OsString::from_vec(vec![0x66, 0xFF]);
+            let mut args: Vec<OsString> = args.iter().map(OsString::from).collect();
 
-        assert_fails_with(
-            parse_args(&args),
-            UsageError::UnknownCommand(lossy_string(&non_utf8)),
-            format!("unknown command '{}'", non_utf8.to_string_lossy(),).as_str(),
-        );
-    }
+            args.push(non_utf8.clone());
 
-    #[test]
-    #[cfg(unix)]
-    fn test_rejects_non_utf8_name() {
-        use crate::cli::lossy_string;
+            args
+        }
 
-        let non_utf8 = invalid_utf8_os_string();
-        let mut args: Vec<OsString> = ["test", "--name"].iter().map(OsString::from).collect();
+        #[test]
+        fn rejects_non_utf8_subcommand() {
+            let args = args_list_with_invalid_utf8(&[]);
+            let non_utf8 = lossy_string(&OsString::from_vec(vec![0x66, 0xFF]));
 
-        args.push(non_utf8.clone());
+            assert_fails_with(
+                parse_args(&args),
+                UsageError::UnknownCommand(non_utf8.clone()),
+                format!("unknown command '{}'", non_utf8).as_str(),
+            );
+        }
 
-        assert_fails_with(
-            parse_args(&args),
-            UsageError::InvalidUtf8(lossy_string(&non_utf8)),
-            format!(
-                "argument '{}' is not valid UTF-8",
-                non_utf8.to_string_lossy(),
-            )
-            .as_str(),
-        );
-    }
+        #[test]
+        fn test_rejects_non_utf8_name() {
+            let args = args_list_with_invalid_utf8(&["test", "--name"]);
+            let non_utf8 = lossy_string(&OsString::from_vec(vec![0x66, 0xFF]));
 
-    #[test]
-    #[cfg(unix)]
-    fn explain_rejects_non_utf8_code() {
-        use crate::cli::lossy_string;
+            assert_fails_with(
+                parse_args(&args),
+                UsageError::InvalidUtf8(non_utf8.clone()),
+                format!("argument '{}' is not valid UTF-8", non_utf8,).as_str(),
+            );
+        }
 
-        let non_utf8 = invalid_utf8_os_string();
-        let mut args: Vec<OsString> = ["explain"].iter().map(OsString::from).collect();
+        #[test]
+        fn explain_rejects_non_utf8_code() {
+            let args = args_list_with_invalid_utf8(&["explain"]);
+            let non_utf8 = lossy_string(&OsString::from_vec(vec![0x66, 0xFF]));
 
-        args.push(non_utf8.clone());
-
-        assert_fails_with(
-            parse_args(&args),
-            UsageError::InvalidUtf8(lossy_string(&non_utf8)),
-            format!(
-                "argument '{}' is not valid UTF-8",
-                non_utf8.to_string_lossy(),
-            )
-            .as_str(),
-        );
+            assert_fails_with(
+                parse_args(&args),
+                UsageError::InvalidUtf8(non_utf8.clone()),
+                format!("argument '{}' is not valid UTF-8", non_utf8,).as_str(),
+            );
+        }
     }
 }
