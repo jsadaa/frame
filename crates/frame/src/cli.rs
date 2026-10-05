@@ -403,12 +403,12 @@ mod tests {
     }
 
     #[test]
-    fn test_help() {
+    fn parses_help() {
         assert_eq!(parse(&["--help"]), Ok(Command::Help));
     }
 
     #[test]
-    fn test_help_with_extra_arg_fails() {
+    fn help_rejects_extra_args() {
         assert_fails(
             parse(&["--help", "whatever"]),
             UsageError::UnexpectedArgument("whatever".to_string()),
@@ -417,12 +417,12 @@ mod tests {
     }
 
     #[test]
-    fn test_version() {
+    fn parses_version() {
         assert_eq!(parse(&["--version"]), Ok(Command::Version));
     }
 
     #[test]
-    fn test_version_with_extra_arg_fails() {
+    fn version_rejects_extra_args() {
         assert_fails(
             parse(&["--version", "whatever"]),
             UsageError::UnexpectedArgument("whatever".to_string()),
@@ -431,12 +431,12 @@ mod tests {
     }
 
     #[test]
-    fn test_parse_without_argument_fails() {
+    fn rejects_empty_args() {
         assert_fails(parse(&[]), UsageError::MissingCommand, "missing command");
     }
 
     #[test]
-    fn test_unknown_command_fails() {
+    fn rejects_unknown_command() {
         assert_fails(
             parse(&["compile"]),
             UsageError::UnknownCommand("compile".to_string()),
@@ -445,7 +445,7 @@ mod tests {
     }
 
     #[test]
-    fn test_run_without_args() {
+    fn run_accepts_no_args() {
         let program_args: Vec<OsString> = Vec::new();
 
         assert_eq!(
@@ -458,7 +458,7 @@ mod tests {
     }
 
     #[test]
-    fn test_run_with_args() {
+    fn run_accepts_target_and_args() {
         assert_eq!(
             parse(&["run", "hello.fm", "Alice"]),
             Ok(Command::Run {
@@ -469,7 +469,7 @@ mod tests {
     }
 
     #[test]
-    fn test_run_with_args_looking_like_options() {
+    fn run_accepts_args_looking_like_options() {
         assert_eq!(
             parse(&["run", ".", "logs", "7", "--dry-run"]),
             Ok(Command::Run {
@@ -480,7 +480,7 @@ mod tests {
     }
 
     #[test]
-    fn test_run_with_option_before_target_fails() {
+    fn run_rejects_option_before_target() {
         assert_fails(
             parse(&["run", "--fast", "x.fm"]),
             UsageError::UnknownOption("--fast".to_string()),
@@ -489,7 +489,7 @@ mod tests {
     }
 
     #[test]
-    fn test_build_with_ouput_and_no_target() {
+    fn build_accepts_ouput_and_no_target() {
         assert_eq!(
             parse(&["build", "-o", "out"]),
             Ok(Command::Build {
@@ -500,7 +500,7 @@ mod tests {
     }
 
     #[test]
-    fn test_build_with_ouput_and_target() {
+    fn build_accepts_ouput_and_target() {
         assert_eq!(
             parse(&["build", "app.fm", "-o", "out"]),
             Ok(Command::Build {
@@ -511,7 +511,7 @@ mod tests {
     }
 
     #[test]
-    fn test_build_with_ouput_before_target() {
+    fn build_accepts_ouput_before_target() {
         assert_eq!(
             parse(&["build", "-o", "out", "app.fm"]),
             Ok(Command::Build {
@@ -522,7 +522,7 @@ mod tests {
     }
 
     #[test]
-    fn test_build_with_ouput_and_no_value_fails() {
+    fn build_rejects_ouput_with_no_value() {
         assert_fails(
             parse(&["build", "-o"]),
             UsageError::OptionExpectsValue("-o"),
@@ -531,7 +531,7 @@ mod tests {
     }
 
     #[test]
-    fn test_build_with_unknown_option_fails() {
+    fn build_rejects_unknown_option() {
         assert_fails(
             parse(&["build", "--verbose"]),
             UsageError::UnknownOption("--verbose".to_string()),
@@ -540,7 +540,7 @@ mod tests {
     }
 
     #[test]
-    fn test_build_with_repeated_option_fails() {
+    fn build_rejects_repeated_option() {
         assert_fails(
             parse(&["build", "-o", "a", "-o", "b"]),
             UsageError::RepeatedOption("-o"),
@@ -549,7 +549,7 @@ mod tests {
     }
 
     #[test]
-    fn test_build_with_two_targets_fails() {
+    fn build_rejects_repeated_targets() {
         assert_fails(
             parse(&["build", "a.fm", "b.fm"]),
             UsageError::UnexpectedArgument("b.fm".to_string()),
@@ -558,7 +558,7 @@ mod tests {
     }
 
     #[test]
-    fn test_check_with_target() {
+    fn check_accepts_target() {
         assert_eq!(
             parse(&["check", "app.fm"]),
             Ok(Command::Check {
@@ -568,12 +568,12 @@ mod tests {
     }
 
     #[test]
-    fn test_check_without_target() {
+    fn check_accepts_no_target() {
         assert_eq!(parse(&["check"]), Ok(Command::Check { target: None }));
     }
 
     #[test]
-    fn test_check_with_duplicated_target_fails() {
+    fn check_rejects_repeated_targets() {
         assert_fails(
             parse(&["check", "a.fm", "b.fm"]),
             UsageError::UnexpectedArgument("b.fm".to_string()),
@@ -582,7 +582,7 @@ mod tests {
     }
 
     #[test]
-    fn test_test() {
+    fn test_accepts_every_options() {
         assert_eq!(
             parse(&[
                 "test",
@@ -601,7 +601,7 @@ mod tests {
     }
 
     #[test]
-    fn test_test_name_option_takes_next_arg() {
+    fn test_name_option_takes_next_arg() {
         assert_eq!(
             parse(&["test", "--name", "--seed"]),
             Ok(Command::Test {
@@ -613,7 +613,7 @@ mod tests {
     }
 
     #[test]
-    fn test_test_uppercase_seed() {
+    fn test_accepts_uppercase_seed() {
         assert_eq!(
             parse(&["test", "--seed", "FF"]),
             Ok(Command::Test {
@@ -625,7 +625,7 @@ mod tests {
     }
 
     #[test]
-    fn test_test_with_invalid_seeds_fails() {
+    fn test_rejects_invalid_seeds() {
         for seed in ["", "7c1f03a9e4b2d8562", "+ff", "0xff", "g1"] {
             assert_fails(
                 parse(&["test", "--seed", seed]),
@@ -636,7 +636,7 @@ mod tests {
     }
 
     #[test]
-    fn test_test_with_unknown_option_fails() {
+    fn test_rejects_unknown_option() {
         assert_fails(
             parse(&["test", "--verbose"]),
             UsageError::UnknownOption("--verbose".to_string()),
@@ -645,7 +645,7 @@ mod tests {
     }
 
     #[test]
-    fn test_test_with_seed_and_no_value_fails() {
+    fn test_rejects_seed_with_no_value() {
         assert_fails(
             parse(&["test", "--seed"]),
             UsageError::OptionExpectsValue("--seed"),
@@ -654,7 +654,7 @@ mod tests {
     }
 
     #[test]
-    fn test_test_with_name_and_no_value_fails() {
+    fn test_rejects_name_with_no_value_fails() {
         assert_fails(
             parse(&["test", "--name"]),
             UsageError::OptionExpectsValue("--name"),
@@ -663,7 +663,7 @@ mod tests {
     }
 
     #[test]
-    fn test_test_with_two_names_fails() {
+    fn test_rejects_repeated_names() {
         assert_fails(
             parse(&["test", "--name", "a.fm", "--name", "b.fm"]),
             UsageError::RepeatedOption("--name"),
@@ -672,7 +672,7 @@ mod tests {
     }
 
     #[test]
-    fn test_test_with_two_targets_fails() {
+    fn test_rejects_repeated_targets() {
         assert_fails(
             parse(&["test", "a.fm", "b.fm"]),
             UsageError::UnexpectedArgument("b.fm".to_string()),
@@ -681,7 +681,7 @@ mod tests {
     }
 
     #[test]
-    fn test_test_with_two_seed_fails() {
+    fn test_rejects_repeated_seeds() {
         assert_fails(
             parse(&["test", "--seed", "77", "--seed", "77"]),
             UsageError::RepeatedOption("--seed"),
@@ -690,7 +690,7 @@ mod tests {
     }
 
     #[test]
-    fn test_fmt() {
+    fn parses_fmt() {
         let paths: Vec<PathBuf> = Vec::new();
 
         assert_eq!(
@@ -703,7 +703,7 @@ mod tests {
     }
 
     #[test]
-    fn test_fmt_with_check_flag() {
+    fn fmt_accepts_check_flag() {
         let paths: Vec<PathBuf> = Vec::new();
 
         assert_eq!(
@@ -713,7 +713,7 @@ mod tests {
     }
 
     #[test]
-    fn test_fmt_paths_only() {
+    fn fmt_accepts_paths_and_no_flag() {
         assert_eq!(
             parse(&["fmt", "a.fm", "src"]),
             Ok(Command::Fmt {
@@ -724,7 +724,7 @@ mod tests {
     }
 
     #[test]
-    fn test_fmt_with_path_before_flag() {
+    fn fmt_accepts_path_before_flag() {
         assert_eq!(
             parse(&["fmt", "src", "--check"]),
             Ok(Command::Fmt {
@@ -735,7 +735,7 @@ mod tests {
     }
 
     #[test]
-    fn test_fmt_with_two_flags_fails() {
+    fn fmt_rejects_repeated_flags() {
         let result = parse(&["fmt", "--check", "--check"]);
         assert_fails(
             result,
@@ -745,7 +745,7 @@ mod tests {
     }
 
     #[test]
-    fn test_fmt_with_unknown_option_fails() {
+    fn fmt_rejects_unknown_option() {
         assert_fails(
             parse(&["fmt", "--verbose"]),
             UsageError::UnknownOption("--verbose".to_string()),
@@ -754,7 +754,7 @@ mod tests {
     }
 
     #[test]
-    fn test_explain() {
+    fn explain_accepts_code() {
         assert_eq!(
             parse(&["explain", "MUT-4"]),
             Ok(Command::Explain {
@@ -764,7 +764,7 @@ mod tests {
     }
 
     #[test]
-    fn test_explain_without_code_fails() {
+    fn explain_rejects_no_code() {
         assert_fails(
             parse(&["explain"]),
             UsageError::CommandExpectsArgument {
@@ -776,7 +776,7 @@ mod tests {
     }
 
     #[test]
-    fn test_explain_with_two_code_fails() {
+    fn explain_rejects_repeated_code() {
         assert_fails(
             parse(&["explain", "MUT-4", "MUT-5"]),
             UsageError::UnexpectedArgument("MUT-5".to_string()),
@@ -785,7 +785,7 @@ mod tests {
     }
 
     #[test]
-    fn test_check_with_unknown_option_fails() {
+    fn check_rejects_unknown_option() {
         assert_fails(
             parse(&["check", "--verbose"]),
             UsageError::UnknownOption("--verbose".to_string()),
@@ -795,7 +795,7 @@ mod tests {
 
     #[test]
     #[cfg(unix)]
-    fn test_run_with_non_utf_8_program_args_fails() {
+    fn run_rejects_non_utf_8_program_args() {
         let non_utf8 = invalid_utf8_os_string();
         let mut args: Vec<OsString> = ["run", "a.fm"].iter().map(OsString::from).collect();
 
@@ -814,7 +814,7 @@ mod tests {
 
     #[test]
     #[cfg(unix)]
-    fn test_non_utf8_subcommand_fails() {
+    fn rejects_non_utf8_subcommand() {
         let non_utf8 = invalid_utf8_os_string();
         let args = vec![non_utf8.clone()];
 
@@ -831,7 +831,7 @@ mod tests {
 
     #[test]
     #[cfg(unix)]
-    fn test_test_with_non_utf8_name_fails() {
+    fn test_rejects_non_utf8_name() {
         let non_utf8 = invalid_utf8_os_string();
         let mut args: Vec<OsString> = ["test", "--name"].iter().map(OsString::from).collect();
 
@@ -850,7 +850,7 @@ mod tests {
 
     #[test]
     #[cfg(unix)]
-    fn test_explain_with_non_utf8_code_fails() {
+    fn explain_rejects_non_utf8_code() {
         let non_utf8 = invalid_utf8_os_string();
         let mut args: Vec<OsString> = ["explain"].iter().map(OsString::from).collect();
 
