@@ -131,9 +131,7 @@ pub fn parse_args(args: &[OsString]) -> Result<Command, UsageError> {
             Some("--help") => parse_help(rest),
             Some("--version") => parse_version(rest),
             Some(unknown) => Err(UsageError::UnknownCommand(unknown.to_owned())),
-            None => Err(UsageError::InvalidUtf8(
-                subcommand.to_string_lossy().to_string(),
-            )),
+            None => Err(UsageError::InvalidUtf8(lossy_string(subcommand))),
         };
     }
 
@@ -145,15 +143,13 @@ pub fn parse_args(args: &[OsString]) -> Result<Command, UsageError> {
 fn parse_run(args: &[OsString]) -> Result<Command, UsageError> {
     let (target, program_args) = match args {
         [target, ..] if is_option(target) => {
-            return Err(UsageError::UnknownOption(
-                target.to_string_lossy().to_string(),
-            ));
+            return Err(UsageError::UnknownOption(lossy_string(target)));
         }
         [target] => (Some(PathBuf::from(target)), Vec::new()),
         [target, program_args @ ..] => {
             for arg in program_args {
                 if !is_valid_utf8(arg) {
-                    return Err(UsageError::InvalidUtf8(arg.to_string_lossy().to_string()));
+                    return Err(UsageError::InvalidUtf8(lossy_string(arg)));
                 }
             }
 
@@ -215,7 +211,7 @@ fn parse_check(args: &[OsString]) -> Result<Command, UsageError> {
             Some(path) if target.is_none() => {
                 target = Some(PathBuf::from(path));
             }
-            _ => return Err(UnexpectedArgument(arg.to_string_lossy().to_string())),
+            _ => return Err(UnexpectedArgument(lossy_string(arg))),
         }
     }
 
@@ -237,7 +233,7 @@ fn parse_test(args: &[OsString]) -> Result<Command, UsageError> {
             Some("--name") => {
                 filter = match iter.next() {
                     Some(f) if f.to_str().is_none() => {
-                        return Err(UsageError::InvalidUtf8(f.to_string_lossy().to_string()));
+                        return Err(UsageError::InvalidUtf8(lossy_string(f)));
                     }
                     Some(f) => Some(f),
                     None => {
@@ -251,7 +247,7 @@ fn parse_test(args: &[OsString]) -> Result<Command, UsageError> {
             Some("--seed") => {
                 seed = match iter.next() {
                     Some(s) if s.to_str().is_none() => {
-                        return Err(UsageError::InvalidUtf8(s.to_string_lossy().to_string()));
+                        return Err(UsageError::InvalidUtf8(lossy_string(s)));
                     }
                     Some(s) => Some(s),
                     None => {
@@ -315,19 +311,15 @@ fn parse_fmt(args: &[OsString]) -> Result<Command, UsageError> {
 fn parse_explain(args: &[OsString]) -> Result<Command, UsageError> {
     let code = match args {
         [code, ..] if is_option(code) => {
-            return Err(UsageError::UnknownOption(
-                code.to_string_lossy().to_string(),
-            ));
+            return Err(UsageError::UnknownOption(lossy_string(code)));
         }
         [code, ..] if !is_valid_utf8(code) => {
-            return Err(UsageError::InvalidUtf8(code.to_string_lossy().to_string()));
+            return Err(UsageError::InvalidUtf8(lossy_string(code)));
         }
         [_, other, ..] => {
-            return Err(UsageError::UnexpectedArgument(
-                other.to_string_lossy().to_string(),
-            ));
+            return Err(UsageError::UnexpectedArgument(lossy_string(other)));
         }
-        [code] => Some(code.to_string_lossy().to_string()), // we can convert with loss as the guard is already applied above
+        [code] => Some(lossy_string(code)), // we can convert with loss as the guard is already applied above
         _ => None,
     };
 
@@ -342,18 +334,14 @@ fn parse_explain(args: &[OsString]) -> Result<Command, UsageError> {
 
 fn parse_help(args: &[OsString]) -> Result<Command, UsageError> {
     match args.first() {
-        Some(arg) => Err(UsageError::UnexpectedArgument(
-            arg.to_string_lossy().to_string(),
-        )),
+        Some(arg) => Err(UsageError::UnexpectedArgument(lossy_string(arg))),
         None => Ok(Command::Help),
     }
 }
 
 fn parse_version(args: &[OsString]) -> Result<Command, UsageError> {
     match args.first() {
-        Some(arg) => Err(UsageError::UnexpectedArgument(
-            arg.to_string_lossy().to_string(),
-        )),
+        Some(arg) => Err(UsageError::UnexpectedArgument(lossy_string(arg))),
         None => Ok(Command::Version),
     }
 }
@@ -369,8 +357,12 @@ fn parse_seed(arg: &OsStr) -> Result<u64, UsageError> {
 
             u64::from_str_radix(arg, 16).map_err(|_| UsageError::InvalidSeed(String::from(arg)))
         }
-        None => Err(UsageError::InvalidUtf8(arg.to_string_lossy().to_string())),
+        None => Err(UsageError::InvalidUtf8(lossy_string(arg))),
     }
+}
+
+fn lossy_string(arg: &OsStr) -> String {
+    arg.to_string_lossy().to_string()
 }
 
 // Utilities
@@ -796,6 +788,8 @@ mod tests {
     #[test]
     #[cfg(unix)]
     fn run_rejects_non_utf_8_program_args() {
+        use crate::cli::lossy_string;
+
         let non_utf8 = invalid_utf8_os_string();
         let mut args: Vec<OsString> = ["run", "a.fm"].iter().map(OsString::from).collect();
 
@@ -803,7 +797,7 @@ mod tests {
 
         assert_fails(
             parse_args(&args),
-            UsageError::InvalidUtf8(non_utf8.to_string_lossy().to_string()),
+            UsageError::InvalidUtf8(lossy_string(&non_utf8)),
             format!(
                 "argument '{}' is not valid UTF-8",
                 non_utf8.to_string_lossy(),
@@ -815,12 +809,14 @@ mod tests {
     #[test]
     #[cfg(unix)]
     fn rejects_non_utf8_subcommand() {
+        use crate::cli::lossy_string;
+
         let non_utf8 = invalid_utf8_os_string();
         let args = vec![non_utf8.clone()];
 
         assert_fails(
             parse_args(&args),
-            UsageError::InvalidUtf8(non_utf8.to_string_lossy().to_string()),
+            UsageError::InvalidUtf8(lossy_string(&non_utf8)),
             format!(
                 "argument '{}' is not valid UTF-8",
                 non_utf8.to_string_lossy(),
@@ -832,6 +828,8 @@ mod tests {
     #[test]
     #[cfg(unix)]
     fn test_rejects_non_utf8_name() {
+        use crate::cli::lossy_string;
+
         let non_utf8 = invalid_utf8_os_string();
         let mut args: Vec<OsString> = ["test", "--name"].iter().map(OsString::from).collect();
 
@@ -839,7 +837,7 @@ mod tests {
 
         assert_fails(
             parse_args(&args),
-            UsageError::InvalidUtf8(non_utf8.to_string_lossy().to_string()),
+            UsageError::InvalidUtf8(lossy_string(&non_utf8)),
             format!(
                 "argument '{}' is not valid UTF-8",
                 non_utf8.to_string_lossy(),
@@ -851,6 +849,8 @@ mod tests {
     #[test]
     #[cfg(unix)]
     fn explain_rejects_non_utf8_code() {
+        use crate::cli::lossy_string;
+
         let non_utf8 = invalid_utf8_os_string();
         let mut args: Vec<OsString> = ["explain"].iter().map(OsString::from).collect();
 
@@ -858,7 +858,7 @@ mod tests {
 
         assert_fails(
             parse_args(&args),
-            UsageError::InvalidUtf8(non_utf8.to_string_lossy().to_string()),
+            UsageError::InvalidUtf8(lossy_string(&non_utf8)),
             format!(
                 "argument '{}' is not valid UTF-8",
                 non_utf8.to_string_lossy(),
