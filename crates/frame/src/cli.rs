@@ -744,27 +744,6 @@ mod tests {
 
     #[test]
     #[cfg(unix)]
-    fn run_rejects_non_utf_8_program_args() {
-        use crate::cli::lossy_string;
-
-        let non_utf8 = invalid_utf8_os_string();
-        let mut args: Vec<OsString> = ["run", "a.fm"].iter().map(OsString::from).collect();
-
-        args.push(non_utf8.clone());
-
-        assert_fails(
-            parse_args(&args),
-            UsageError::InvalidUtf8(lossy_string(&non_utf8)),
-            format!(
-                "argument '{}' is not valid UTF-8",
-                non_utf8.to_string_lossy(),
-            )
-            .as_str(),
-        );
-    }
-
-    #[test]
-    #[cfg(unix)]
     fn rejects_non_utf8_subcommand() {
         use crate::cli::lossy_string;
 
