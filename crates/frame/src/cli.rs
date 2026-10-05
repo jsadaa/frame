@@ -187,9 +187,8 @@ fn parse_build(args: &[OsString]) -> Result<Command, UsageError> {
 
 fn parse_check(args: &[OsString]) -> Result<Command, UsageError> {
     let mut target: Option<PathBuf> = None;
-    let iter = args.iter();
 
-    for arg in iter {
+    for arg in args {
         match arg.to_str() {
             Some(option) if is_option(arg) => {
                 return Err(UsageError::UnknownOption(option.to_string()));
@@ -242,9 +241,7 @@ fn parse_fmt(args: &[OsString]) -> Result<Command, UsageError> {
     let mut check = false;
     let mut paths: Vec<PathBuf> = Vec::new();
 
-    let iter = args.iter();
-
-    for arg in iter {
+    for arg in args {
         match arg.to_str() {
             Some("--check") if check => {
                 return Err(UsageError::RepeatedOption("--check"));
