@@ -9,47 +9,75 @@ use crate::cli::UsageError::UnexpectedArgument;
 /// The frame cli subcommands, each holding its own specific args
 #[derive(Debug, PartialEq)]
 pub enum Command {
+    /// The run command
     Run {
+        /// An optional target path, aiming a frame file (`*.fm`) or a package root
         target: Option<PathBuf>,
+        /// Optional arguments to pass to the targeted program
         program_args: Vec<OsString>,
     },
+    // The build command
     Build {
+        /// An optional target path, aiming a frame file (`*.fm`) or a package root
         target: Option<PathBuf>,
+        /// An optional output path
         output: Option<PathBuf>,
     },
+    /// The check command
     Check {
+        /// An optional target path, aiming a frame file (`*.fm`) or a package root
         target: Option<PathBuf>,
     },
+    /// The test command
     Test {
+        /// An optional target path, aiming a frame test file (`*.fm`)
         target: Option<PathBuf>,
+        /// An optional name, filtering the matching tests
         filter: Option<String>,
+        /// An optional seed, as an hexadecimal number
         seed: Option<u64>,
     },
+    /// The format command
     Fmt {
+        /// Dry run flag
         check: bool,
+        /// Optional paths, a frame file (`*.fm`) or a package root
         paths: Vec<PathBuf>,
     },
+    /// The explain command
     Explain {
+        /// A frame code, by its reference name (ex: "MUT-4")
         code: String,
     },
+    /// The help command
     Help,
+    /// The version command
     Version,
 }
 
 /// A usage error from the input args
 #[derive(Debug, PartialEq, Eq)]
 pub enum UsageError {
+    /// Some arguments are not valid UTF-8
     InvalidUtf8(String),
+    /// The subcommand is missing
     MissingCommand,
+    /// The subcommand is unknown
     UnknownCommand(String),
+    /// The seed is invalid
     InvalidSeed(String),
+    /// The subcommand expects an argument
     CommandExpectsArgument {
         command: &'static str,
         arg: &'static str,
     },
+    /// The option expect a value
     OptionExpectsValue(&'static str),
+    /// The option is repeated
     RepeatedOption(&'static str),
+    /// An unexpected argument
     UnexpectedArgument(String),
+    /// An unknown option
     UnknownOption(String),
 }
 
@@ -84,7 +112,11 @@ impl fmt::Display for UsageError {
     }
 }
 
-/// Parse the args list and return the command on success and a usage error on failure
+/// Parse a command from an argument list
+///
+/// # Errors
+///
+/// Return a `UsageError` when the arguments or the command are invalid
 pub fn parse_args(args: &[OsString]) -> Result<Command, UsageError> {
     let first = args.split_first();
 
