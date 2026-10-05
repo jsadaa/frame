@@ -1,15 +1,21 @@
-use std::{ffi::OsString, fmt, path::PathBuf};
+use std::{
+    ffi::{OsStr, OsString},
+    fmt,
+    path::PathBuf,
+};
+
+use crate::cli::UsageError::UnexpectedArgument;
 
 /// The frame cli subcommands, each holding its own specific args
 #[derive(Debug, PartialEq)]
 pub enum Command {
     Run {
         target: Option<PathBuf>,
-        args: Vec<OsString>,
+        program_args: Vec<OsString>,
     },
     Build {
         target: Option<PathBuf>,
-        out: Option<PathBuf>,
+        output: Option<PathBuf>,
     },
     Check {
         target: Option<PathBuf>,
@@ -36,14 +42,14 @@ pub enum UsageError {
     InvalidUtf8(String),
     MissingCommand,
     UnknownCommand(String),
-    InvalidHexadecimal(String),
-    CommandExpectArg(String, String),
-    OptionExpectValue(String),
-    CommandTakesNoArg(String),
-    OptionBeforeTarget(String, String),
-    DuplicatedOption(String),
-    DuplicatedTarget,
-    DuplicatedCode,
+    InvalidSeed(String),
+    CommandExpectsArgument {
+        command: &'static str,
+        arg: &'static str,
+    },
+    OptionExpectsValue(&'static str),
+    RepeatedOption(&'static str),
+    UnexpectedArgument(String),
     UnknownOption(String),
 }
 
@@ -52,36 +58,27 @@ impl std::error::Error for UsageError {}
 impl fmt::Display for UsageError {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
-            UsageError::InvalidUtf8(arg) => write!(f, "invalid UTF-8: {arg:?}"),
+            UsageError::InvalidUtf8(arg) => write!(f, "argument '{arg}' is not valid UTF-8"),
             UsageError::MissingCommand => write!(f, "missing command"),
-            UsageError::UnknownCommand(unknown) => write!(f, "unknown command: {unknown:?}"),
-            UsageError::InvalidHexadecimal(hex) => write!(f, "invalid hexadecimal string: {hex:?}"),
-            UsageError::CommandExpectArg(command, code) => {
-                write!(f, "command {command:?} expects: {code:?}")
+            UsageError::UnknownCommand(unknown) => write!(f, "unknown command '{unknown}'"),
+            UsageError::InvalidSeed(seed) => write!(
+                f,
+                "invalid seed '{seed}': expected 1 to 16 hexadecimal digits"
+            ),
+            UsageError::CommandExpectsArgument { command, arg } => {
+                write!(f, "command '{command}' expects a {arg}")
             }
-            UsageError::OptionExpectValue(option) => {
-                write!(f, "option {option:?} expects a value")
+            UsageError::OptionExpectsValue(option) => {
+                write!(f, "option '{option}' expects a value")
             }
-            UsageError::CommandTakesNoArg(command) => {
-                write!(f, "command {command:?} takes no arguments")
+            UsageError::RepeatedOption(option) => {
+                write!(f, "option '{option}' is repeated")
             }
-            UsageError::OptionBeforeTarget(command, option) => {
-                write!(
-                    f,
-                    "command {command:?} needs a target before option {option}"
-                )
-            }
-            UsageError::DuplicatedOption(option) => {
-                write!(f, "option {option:?} is duplicated")
-            }
-            UsageError::DuplicatedTarget => {
-                write!(f, "target is duplicated")
-            }
-            UsageError::DuplicatedCode => {
-                write!(f, "code is duplicated")
+            UsageError::UnexpectedArgument(arg) => {
+                write!(f, "unexpected argument '{arg}'")
             }
             UsageError::UnknownOption(option) => {
-                write!(f, "unknown option: {option}")
+                write!(f, "unknown option '{option}'")
             }
         }
     }
@@ -89,248 +86,267 @@ impl fmt::Display for UsageError {
 
 /// Parse the args list and return the command on success and a usage error on failure
 pub fn parse_args(args: &[OsString]) -> Result<Command, UsageError> {
-    let first = args.first();
+    let first = args.split_first();
 
-    if let Some(subcommand) = first {
+    if let Some((subcommand, rest)) = first {
         return match subcommand.to_str() {
-            Some("run") => handle_run_command(args),
-            Some("build") => handle_build_command(args),
-            Some("check") => handle_check_command(args),
-            Some("test") => handle_test_command(args),
-            Some("fmt") => handle_fmt_command(args),
-            Some("explain") => handle_explain_command(args),
-            Some("help") => handle_help_command(args),
-            Some("version") => Ok(Command::Version),
+            Some("run") => parse_run(rest),
+            Some("build") => parse_build(rest),
+            Some("check") => parse_check(rest),
+            Some("test") => parse_test(rest),
+            Some("fmt") => parse_fmt(rest),
+            Some("explain") => parse_explain(rest),
+            Some("--help") => parse_help(rest),
+            Some("--version") => parse_version(rest),
             Some(unknown) => Err(UsageError::UnknownCommand(unknown.to_owned())),
-            None => Err(invalid_utf8(subcommand)),
+            None => Err(UsageError::InvalidUtf8(
+                subcommand.to_string_lossy().to_string(),
+            )),
         };
     }
 
     Err(UsageError::MissingCommand)
 }
 
-// Handlers
+// Parsers
 
-fn handle_run_command(args: &[OsString]) -> Result<Command, UsageError> {
-    let target = get_positional_arg(args, 2);
-
-    if target.clone().filter(arg_starts_with_hyphen).is_some() {
-        return Err(UsageError::OptionBeforeTarget(
-            "run".to_string(),
-            target.unwrap().to_str().unwrap().to_string(), // we can unwrap because the guard is applied in `arg_starts_with_hyphen`
-        ));
-    }
-
-    let target = target.map(PathBuf::from);
-    let args: Vec<_> = args.iter().skip(2).cloned().collect();
-
-    for arg in &args {
-        if arg.to_str().is_none() {
-            return Err(UsageError::InvalidUtf8(arg.to_string_lossy().to_string()));
+fn parse_run(args: &[OsString]) -> Result<Command, UsageError> {
+    let (target, program_args) = match args {
+        [target, ..] if is_option(target) => {
+            return Err(UsageError::UnknownOption(
+                target.to_string_lossy().to_string(),
+            ));
         }
-    }
+        [target] => (Some(PathBuf::from(target)), Vec::new()),
+        [target, program_args @ ..] if program_args.iter().any(|a| a.to_str().is_none()) => {
+            for arg in program_args {
+                if arg.to_str().is_none() {
+                    return Err(UsageError::InvalidUtf8(arg.to_string_lossy().to_string()));
+                }
+            }
 
-    Ok(Command::Run { target, args })
+            unreachable!("at this step, a program arg have already failed")
+        }
+        [target, program_args @ ..] => (Some(PathBuf::from(target)), program_args.to_vec()),
+        _ => (None, Vec::new()),
+    };
+
+    Ok(Command::Run {
+        target,
+        program_args,
+    })
 }
 
-fn handle_build_command(args: &[OsString]) -> Result<Command, UsageError> {
+fn parse_build(args: &[OsString]) -> Result<Command, UsageError> {
     let mut target: Option<PathBuf> = None;
-    let mut out: Option<&OsString> = None;
+    let mut output: Option<&OsString> = None;
 
-    let mut iter = args.iter().skip(1);
+    let mut iter = args.iter();
 
     while let Some(arg) = iter.next() {
         match arg.to_str() {
+            Some("-o") if output.is_some() => {
+                return Err(UsageError::RepeatedOption("-o"));
+            }
             Some("-o") => {
-                out = iter.next();
-                if out.is_none() {
-                    return Err(UsageError::OptionExpectValue("-o".to_string()));
-                }
-
-                if !arg_is_unique(args, "-o") {
-                    return Err(UsageError::DuplicatedOption("-o".to_string()));
+                output = iter.next();
+                if output.is_none() {
+                    return Err(UsageError::OptionExpectsValue("-o"));
                 }
             }
-            Some(option) if option.starts_with("-") => {
+            Some(option) if option.starts_with('-') => {
                 return Err(UsageError::UnknownOption(option.to_string()));
             }
-            Some(_) => {
+            Some(option) if target.is_some() => {
+                return Err(UsageError::UnexpectedArgument(option.to_string()));
+            }
+            _ => {
                 target = Some(PathBuf::from(arg));
             }
-            None => return Err(invalid_utf8(arg)),
         }
     }
 
     Ok(Command::Build {
         target,
-        out: out.map(PathBuf::from),
+        output: output.map(PathBuf::from),
     })
 }
 
-fn handle_check_command(args: &[OsString]) -> Result<Command, UsageError> {
-    if let Some(arg) = args.iter().find(|a| arg_starts_with_hyphen(a)) {
-        return Err(UsageError::UnknownOption(
-            arg.clone().into_string().unwrap_or(String::new()),
-        ));
-    }
+fn parse_check(args: &[OsString]) -> Result<Command, UsageError> {
+    let mut target: Option<PathBuf> = None;
+    let iter = args.iter();
 
-    if args.len() > 2 {
-        return Err(UsageError::DuplicatedTarget);
+    for arg in iter {
+        match arg.to_str() {
+            Some(option) if is_option(arg) => {
+                return Err(UsageError::UnknownOption(option.to_string()));
+            }
+            Some(path) if target.is_none() => {
+                target = Some(PathBuf::from(path));
+            }
+            _ => return Err(UnexpectedArgument(arg.to_string_lossy().to_string())),
+        }
     }
-
-    let target = get_positional_arg(args, 2).map(PathBuf::from);
 
     Ok(Command::Check { target })
 }
 
-fn handle_test_command(args: &[OsString]) -> Result<Command, UsageError> {
+fn parse_test(args: &[OsString]) -> Result<Command, UsageError> {
     let mut target: Option<PathBuf> = None;
     let mut filter: Option<&OsString> = None;
     let mut seed: Option<&OsString> = None;
 
-    let mut iter = args.iter().skip(1);
+    let mut iter = args.iter();
 
     while let Some(arg) = iter.next() {
         match arg.to_str() {
+            Some("--name") if filter.is_some() => {
+                return Err(UsageError::RepeatedOption("--name"));
+            }
             Some("--name") => {
-                filter = iter.next();
-                if filter.is_none() {
-                    return Err(UsageError::OptionExpectValue("--name".to_string()));
-                }
-
-                if !arg_is_unique(args, "--name") {
-                    return Err(UsageError::DuplicatedOption("--name".to_string()));
-                }
+                filter = match iter.next() {
+                    Some(f) if f.to_str().is_none() => {
+                        return Err(UsageError::InvalidUtf8(f.to_string_lossy().to_string()));
+                    }
+                    Some(f) => Some(f),
+                    None => {
+                        return Err(UsageError::OptionExpectsValue("--name"));
+                    }
+                };
+            }
+            Some("--seed") if seed.is_some() => {
+                return Err(UsageError::RepeatedOption("--seed"));
             }
             Some("--seed") => {
-                seed = iter.next();
-                if seed.is_none() {
-                    return Err(UsageError::OptionExpectValue("--seed".to_string()));
-                }
-
-                if !arg_is_unique(args, "--seed") {
-                    return Err(UsageError::DuplicatedOption("--seed".to_string()));
-                }
+                seed = match iter.next() {
+                    Some(s) if s.to_str().is_none() => {
+                        return Err(UsageError::InvalidUtf8(s.to_string_lossy().to_string()));
+                    }
+                    Some(s) => Some(s),
+                    None => {
+                        return Err(UsageError::OptionExpectsValue("--seed"));
+                    }
+                };
             }
-            Some(option) if option.starts_with("-") => {
+            Some(option) if option.starts_with('-') => {
                 return Err(UsageError::UnknownOption(option.to_string()));
             }
-            Some(_) => {
-                target = Some(PathBuf::from(arg));
+            Some(arg) if target.is_some() => {
+                return Err(UsageError::UnexpectedArgument(arg.to_string()));
             }
-            None => return Err(invalid_utf8(arg)),
+            _ => {
+                target = Some(PathBuf::from(arg)); // we keep paths as is, even invalids
+            }
         }
     }
 
-    match seed {
-        Some(s) => parse_hex(s.clone()).map(|s| Command::Test {
-            target,
-            filter: filter.and_then(|f| f.to_str().map(String::from)),
-            seed: Some(s),
-        }),
-        None => Ok(Command::Test {
-            target,
-            filter: filter.and_then(|f| f.to_str().map(String::from)),
-            seed: None,
-        }),
-    }
-}
+    let seed: Option<u64> = if let Some(s) = seed {
+        let parsed = parse_seed(s);
 
-fn handle_fmt_command(args: &[OsString]) -> Result<Command, UsageError> {
-    let paths: Vec<PathBuf> = args
-        .iter()
-        .skip(1)
-        .filter(|arg| !arg_starts_with_hyphen(arg))
-        .cloned()
-        .map(PathBuf::from)
-        .collect();
-
-    match arg_exists(args, "--check") {
-        true if !arg_is_unique(args, "--check") => {
-            Err(UsageError::DuplicatedOption("--check".to_string()))
+        if let Err(p) = parsed {
+            return Err(p);
         }
-        true => Ok(Command::Fmt { check: true, paths }),
-        false => Ok(Command::Fmt {
-            check: false,
-            paths,
+
+        Some(parsed.unwrap())
+    } else {
+        None
+    };
+
+    Ok(Command::Test {
+        target,
+        filter: filter.and_then(|f| f.to_str().map(String::from)),
+        seed,
+    })
+}
+
+fn parse_fmt(args: &[OsString]) -> Result<Command, UsageError> {
+    let mut check = false;
+    let mut paths: Vec<PathBuf> = Vec::new();
+
+    let iter = args.iter();
+
+    for arg in iter {
+        match arg.to_str() {
+            Some("--check") if check => {
+                return Err(UsageError::RepeatedOption("--check"));
+            }
+            Some("--check") => check = true,
+            _ => paths.push(PathBuf::from(arg)),
+        }
+    }
+
+    Ok(Command::Fmt { check, paths })
+}
+
+fn parse_explain(args: &[OsString]) -> Result<Command, UsageError> {
+    let code = match args {
+        [code, ..] if is_option(code) => {
+            return Err(UsageError::UnknownOption(
+                code.to_string_lossy().to_string(),
+            ));
+        }
+        [code, ..] if !is_valid_utf8(code) => {
+            return Err(UsageError::InvalidUtf8(code.to_string_lossy().to_string()));
+        }
+        [_, other, ..] => {
+            return Err(UsageError::UnexpectedArgument(
+                other.to_string_lossy().to_string(),
+            ));
+        }
+        [code] => Some(code.to_string_lossy().to_string()), // we can convert with loss as the guard is already applied above
+        _ => None,
+    };
+
+    match code {
+        Some(code) => Ok(Command::Explain { code }),
+        None => Err(UsageError::CommandExpectsArgument {
+            command: "explain",
+            arg: "code",
         }),
     }
 }
 
-fn handle_explain_command(args: &[OsString]) -> Result<Command, UsageError> {
-    if args.len() > 2 {
-        return Err(UsageError::DuplicatedCode);
-    }
-
-    let code = get_positional_arg(args, 2);
-
-    if code.is_none() {
-        return Err(UsageError::CommandExpectArg(
-            "explain".to_string(),
-            "code".to_string(),
-        ));
-    }
-
-    let original = code.clone().unwrap();
-    let checked = code.and_then(|c| c.to_str().map(String::from));
-
-    match checked {
-        Some(code) => Ok(Command::Explain {
-            code: code.to_string(),
-        }),
-        None => Err(invalid_utf8(&original)),
+fn parse_help(args: &[OsString]) -> Result<Command, UsageError> {
+    match args.first() {
+        Some(arg) => Err(UsageError::UnexpectedArgument(
+            arg.to_string_lossy().to_string(),
+        )),
+        None => Ok(Command::Help),
     }
 }
 
-fn handle_help_command(args: &[OsString]) -> Result<Command, UsageError> {
-    if args.iter().skip(1).take(1).next().is_some() {
-        return Err(UsageError::CommandTakesNoArg("help".to_string()));
+fn parse_version(args: &[OsString]) -> Result<Command, UsageError> {
+    match args.first() {
+        Some(arg) => Err(UsageError::UnexpectedArgument(
+            arg.to_string_lossy().to_string(),
+        )),
+        None => Ok(Command::Version),
     }
-
-    Ok(Command::Help)
 }
 
-// Utilities
-
-fn get_positional_arg(args: &[OsString], pos: usize) -> Option<OsString> {
-    args.iter().skip(pos - 1).take(1).next().cloned()
-}
-
-fn arg_exists(args: &[OsString], arg: &str) -> bool {
-    args.iter()
-        .find(|a| a.to_str().is_some_and(|a| a == arg))
-        .is_some()
-}
-
-fn parse_hex(arg: OsString) -> Result<u64, UsageError> {
+fn parse_seed(arg: &OsStr) -> Result<u64, UsageError> {
     match arg.to_str() {
         Some(arg) => {
             if !(1usize..=16usize).contains(&arg.chars().count())
                 || !arg.chars().all(|c| c.is_ascii_hexdigit())
             {
-                return Err(UsageError::InvalidHexadecimal(String::from(arg)));
+                return Err(UsageError::InvalidSeed(String::from(arg)));
             }
 
-            u64::from_str_radix(arg, 16)
-                .map_err(|_| UsageError::InvalidHexadecimal(String::from(arg)))
+            u64::from_str_radix(arg, 16).map_err(|_| UsageError::InvalidSeed(String::from(arg)))
         }
-        None => Err(invalid_utf8(&arg)),
+        None => Err(UsageError::InvalidUtf8(arg.to_string_lossy().to_string())),
     }
 }
 
-fn arg_starts_with_hyphen(arg: &OsString) -> bool {
-    arg.to_str().is_some_and(|arg| arg.starts_with("-"))
+// Utilities
+
+fn is_option(arg: &OsStr) -> bool {
+    arg.as_encoded_bytes().starts_with(b"-")
 }
 
-fn arg_is_unique(args: &[OsString], option: &str) -> bool {
-    args.iter()
-        .filter(|a| a.to_str().is_some_and(|a| a == option))
-        .count()
-        == 1
-}
-
-fn invalid_utf8(arg: &OsString) -> UsageError {
-    UsageError::InvalidUtf8(String::from_utf8_lossy(arg.as_encoded_bytes()).into_owned())
+fn is_valid_utf8(arg: &OsStr) -> bool {
+    arg.to_str().is_some()
 }
 
 #[cfg(test)]
