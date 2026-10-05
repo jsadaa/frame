@@ -130,7 +130,7 @@ pub fn parse_args(args: &[OsString]) -> Result<Command, UsageError> {
         Some("--help") => parse_help(rest),
         Some("--version") => parse_version(rest),
         Some(unknown) => Err(UsageError::UnknownCommand(unknown.to_owned())),
-        None => Err(UsageError::InvalidUtf8(lossy_string(subcommand))),
+        None => Err(UsageError::UnknownCommand(lossy_string(subcommand))),
     }
 }
 
@@ -737,12 +737,8 @@ mod tests {
 
         assert_fails_with(
             parse_args(&args),
-            UsageError::InvalidUtf8(lossy_string(&non_utf8)),
-            format!(
-                "argument '{}' is not valid UTF-8",
-                non_utf8.to_string_lossy(),
-            )
-            .as_str(),
+            UsageError::UnknownCommand(lossy_string(&non_utf8)),
+            format!("unknown command '{}'", non_utf8.to_string_lossy(),).as_str(),
         );
     }
 
