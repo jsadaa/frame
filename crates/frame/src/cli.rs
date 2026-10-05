@@ -5,7 +5,7 @@ use std::{
 };
 
 /// The frame cli subcommands, each holding its own specific args
-#[derive(Debug, PartialEq)]
+#[derive(Debug, PartialEq, Eq)]
 pub enum Command {
     /// The run command
     Run {
