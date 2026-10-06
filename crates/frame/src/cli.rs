@@ -770,6 +770,39 @@ mod tests {
         }
 
         #[test]
+        fn run_accepts_non_utf8_program_args() {
+            let non_utf8_path = OsString::from_vec(vec![0x66, 0xFF]);
+            let args = args_list_with_invalid_utf8(&["run", "a.fm"]);
+
+            assert_eq!(
+                Ok(Command::Run {
+                    target: Some(PathBuf::from("a.fm")),
+                    program_args: vec![non_utf8_path.clone()]
+                }),
+                parse_args(&args)
+            )
+        }
+
+        #[test]
+        fn rejects_non_utf8_second_target() {
+            let cases: [Vec<OsString>; 3] = [
+                args_list_with_invalid_utf8(&["build", "a.fm"]),
+                args_list_with_invalid_utf8(&["check", "a.fm"]),
+                args_list_with_invalid_utf8(&["test", "a.fm"]),
+            ];
+
+            let lossy = lossy_string(&OsString::from_vec(vec![0x66, 0xFF]));
+
+            for args in cases {
+                assert_fails_with(
+                    parse_args(&args),
+                    UsageError::UnexpectedArgument(lossy.clone()),
+                    format!("unexpected argument '{}'", lossy).as_str(),
+                );
+            }
+        }
+
+        #[test]
         fn accepts_non_utf8_paths_as_is() {
             let non_utf8_path = Some(PathBuf::from(OsString::from_vec(vec![0x66, 0xFF])));
 
