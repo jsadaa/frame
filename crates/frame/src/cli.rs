@@ -816,6 +816,27 @@ mod tests {
         }
 
         #[test]
+        fn rejects_non_utf8_option() {
+            let cases = [
+                args_list_with_invalid_utf8_option(&["build"]),
+                args_list_with_invalid_utf8_option(&["check"]),
+                args_list_with_invalid_utf8_option(&["test"]),
+                args_list_with_invalid_utf8_option(&["fmt"]),
+            ];
+
+            let lossy = lossy_string(&non_utf8_option());
+
+            for args in cases {
+                println!("{args:?}");
+                assert_fails_with(
+                    parse_args(&args),
+                    UsageError::UnknownOption(lossy.clone()),
+                    format!("unknown option '{}'", lossy).as_str(),
+                );
+            }
+        }
+
+        #[test]
         fn accepts_non_utf8_paths_as_is() {
             let non_utf8_path = Some(PathBuf::from(non_utf8_string()));
 
