@@ -238,7 +238,7 @@ fn parse_explain(args: &[OsString]) -> Result<Command, UsageError> {
         [_, other, ..] => Err(UsageError::UnexpectedArgument(lossy_string(other))),
         [code] => Ok(Command::Explain {
             code: parse_text(code)?,
-        }), // we can convert with loss as the guard is already applied above
+        }),
         [] => Err(UsageError::CommandExpectsArgument {
             command: "explain",
             expected: "a code",
@@ -267,7 +267,7 @@ fn parse_target(target: &OsStr, actual: Option<PathBuf>) -> Result<PathBuf, Usag
         Some(t) if is_option(target) => Err(UsageError::UnknownOption(t.to_string())),
         None if is_option(target) => Err(UsageError::UnknownOption(lossy_string(target))),
         Some(t) if actual.is_some() => Err(UsageError::UnexpectedArgument(t.to_string())),
-        None if actual.is_some() => Err(UsageError::UnexpectedArgument(lossy_string(target))), // keep paths as is, even invalids ones
+        None if actual.is_some() => Err(UsageError::UnexpectedArgument(lossy_string(target))),
         _ => Ok(PathBuf::from(target)),
     }
 }
