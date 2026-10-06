@@ -238,7 +238,7 @@ fn parse_fmt(args: &[OsString]) -> Result<Command, UsageError> {
 fn parse_explain(args: &[OsString]) -> Result<Command, UsageError> {
     match args {
         [code, ..] if is_option(code) => Err(UsageError::UnknownOption(lossy_string(code))),
-        [_, other, ..] => Err(UsageError::UnexpectedArgument(lossy_string(other))),
+        [_, extra, ..] => Err(UsageError::UnexpectedArgument(lossy_string(extra))),
         [code] => Ok(Command::Explain {
             code: parse_text(code)?,
         }),
@@ -265,16 +265,16 @@ fn parse_version(args: &[OsString]) -> Result<Command, UsageError> {
 
 // Utility parsers
 
-fn parse_target(target: &OsStr, actual: &Option<PathBuf>) -> Result<PathBuf, UsageError> {
-    if is_option(target) {
-        return Err(UsageError::UnknownOption(lossy_string(target)));
+fn parse_target(arg: &OsStr, current: &Option<PathBuf>) -> Result<PathBuf, UsageError> {
+    if is_option(arg) {
+        return Err(UsageError::UnknownOption(lossy_string(arg)));
     }
 
-    if actual.is_some() {
-        return Err(UsageError::UnexpectedArgument(lossy_string(target)));
+    if current.is_some() {
+        return Err(UsageError::UnexpectedArgument(lossy_string(arg)));
     }
 
-    Ok(PathBuf::from(target))
+    Ok(PathBuf::from(arg))
 }
 
 fn parse_option_value<T>(
@@ -365,7 +365,7 @@ mod tests {
     }
 
     #[test]
-    fn rejects_empty_args() {
+    fn rejects_missing_command() {
         assert_fails_with(parse(&[]), UsageError::MissingCommand, "missing command");
     }
 
@@ -474,7 +474,7 @@ mod tests {
     }
 
     #[test]
-    fn build_rejects_repeated_option() {
+    fn build_rejects_repeated_output() {
         assert_fails_with(
             parse(&["build", "-o", "a", "-o", "b"]),
             UsageError::RepeatedOption("-o"),
@@ -597,7 +597,7 @@ mod tests {
     }
 
     #[test]
-    fn test_rejects_repeated_names() {
+    fn test_rejects_repeated_name() {
         assert_fails_with(
             parse(&["test", "--name", "a.fm", "--name", "b.fm"]),
             UsageError::RepeatedOption("--name"),
@@ -615,7 +615,7 @@ mod tests {
     }
 
     #[test]
-    fn test_rejects_repeated_seeds() {
+    fn test_rejects_repeated_seed() {
         assert_fails_with(
             parse(&["test", "--seed", "77", "--seed", "77"]),
             UsageError::RepeatedOption("--seed"),
@@ -624,7 +624,7 @@ mod tests {
     }
 
     #[test]
-    fn parses_fmt() {
+    fn fmt_accepts_no_args() {
         let paths: Vec<PathBuf> = Vec::new();
 
         assert_eq!(
@@ -647,7 +647,7 @@ mod tests {
     }
 
     #[test]
-    fn fmt_accepts_paths_and_no_flag() {
+    fn fmt_accepts_paths() {
         assert_eq!(
             parse(&["fmt", "a.fm", "src"]),
             Ok(Command::Fmt {
@@ -669,7 +669,7 @@ mod tests {
     }
 
     #[test]
-    fn fmt_rejects_repeated_flags() {
+    fn fmt_rejects_repeated_check() {
         let result = parse(&["fmt", "--check", "--check"]);
         assert_fails_with(
             result,
@@ -698,7 +698,7 @@ mod tests {
     }
 
     #[test]
-    fn explain_rejects_no_code() {
+    fn explain_rejects_missing_code() {
         assert_fails_with(
             parse(&["explain"]),
             UsageError::CommandExpectsArgument {
@@ -733,7 +733,7 @@ mod tests {
         use super::assert_fails_with;
         use std::os::unix::ffi::OsStringExt;
 
-        fn non_utf8_string() -> OsString {
+        fn non_utf8_arg() -> OsString {
             OsString::from_vec(vec![0x66, 0xFF])
         }
 
@@ -741,15 +741,15 @@ mod tests {
             OsString::from_vec(vec![0x2D, 0xFF])
         }
 
-        fn args_list_with_invalid_utf8_string(args: &[&str]) -> Vec<OsString> {
+        fn args_with_non_utf8_arg(args: &[&str]) -> Vec<OsString> {
             let mut args: Vec<OsString> = args.iter().map(OsString::from).collect();
 
-            args.push(non_utf8_string());
+            args.push(non_utf8_arg());
 
             args
         }
 
-        fn args_list_with_invalid_utf8_option(args: &[&str]) -> Vec<OsString> {
+        fn args_with_non_utf8_option(args: &[&str]) -> Vec<OsString> {
             let mut args: Vec<OsString> = args.iter().map(OsString::from).collect();
 
             args.push(non_utf8_option());
@@ -759,8 +759,8 @@ mod tests {
 
         #[test]
         fn rejects_non_utf8_subcommand() {
-            let args = args_list_with_invalid_utf8_string(&[]);
-            let non_utf8 = lossy_string(&non_utf8_string());
+            let args = args_with_non_utf8_arg(&[]);
+            let non_utf8 = lossy_string(&non_utf8_arg());
 
             assert_fails_with(
                 parse_args(&args),
@@ -771,8 +771,8 @@ mod tests {
 
         #[test]
         fn test_rejects_non_utf8_name() {
-            let args = args_list_with_invalid_utf8_string(&["test", "--name"]);
-            let non_utf8 = lossy_string(&non_utf8_string());
+            let args = args_with_non_utf8_arg(&["test", "--name"]);
+            let non_utf8 = lossy_string(&non_utf8_arg());
 
             assert_fails_with(
                 parse_args(&args),
@@ -783,8 +783,8 @@ mod tests {
 
         #[test]
         fn explain_rejects_non_utf8_code() {
-            let args = args_list_with_invalid_utf8_string(&["explain"]);
-            let non_utf8 = lossy_string(&non_utf8_string());
+            let args = args_with_non_utf8_arg(&["explain"]);
+            let non_utf8 = lossy_string(&non_utf8_arg());
 
             assert_fails_with(
                 parse_args(&args),
@@ -795,13 +795,13 @@ mod tests {
 
         #[test]
         fn run_accepts_non_utf8_program_args() {
-            let args = args_list_with_invalid_utf8_string(&["run", "a.fm"]);
+            let args = args_with_non_utf8_arg(&["run", "a.fm"]);
 
             assert_eq!(
                 parse_args(&args),
                 Ok(Command::Run {
                     target: Some(PathBuf::from("a.fm")),
-                    program_args: vec![non_utf8_string()]
+                    program_args: vec![non_utf8_arg()]
                 }),
             )
         }
@@ -809,12 +809,12 @@ mod tests {
         #[test]
         fn rejects_non_utf8_second_target() {
             let cases = [
-                args_list_with_invalid_utf8_string(&["build", "a.fm"]),
-                args_list_with_invalid_utf8_string(&["check", "a.fm"]),
-                args_list_with_invalid_utf8_string(&["test", "a.fm"]),
+                args_with_non_utf8_arg(&["build", "a.fm"]),
+                args_with_non_utf8_arg(&["check", "a.fm"]),
+                args_with_non_utf8_arg(&["test", "a.fm"]),
             ];
 
-            let lossy = lossy_string(&non_utf8_string());
+            let lossy = lossy_string(&non_utf8_arg());
 
             for args in cases {
                 assert_fails_with(
@@ -828,10 +828,10 @@ mod tests {
         #[test]
         fn rejects_non_utf8_option() {
             let cases = [
-                args_list_with_invalid_utf8_option(&["build"]),
-                args_list_with_invalid_utf8_option(&["check"]),
-                args_list_with_invalid_utf8_option(&["test"]),
-                args_list_with_invalid_utf8_option(&["fmt"]),
+                args_with_non_utf8_option(&["build"]),
+                args_with_non_utf8_option(&["check"]),
+                args_with_non_utf8_option(&["test"]),
+                args_with_non_utf8_option(&["fmt"]),
             ];
 
             let lossy = lossy_string(&non_utf8_option());
@@ -848,7 +848,7 @@ mod tests {
 
         #[test]
         fn accepts_non_utf8_paths_as_is() {
-            let non_utf8_path = Some(PathBuf::from(non_utf8_string()));
+            let non_utf8_path = Some(PathBuf::from(non_utf8_arg()));
 
             let cases = [
                 (
@@ -856,27 +856,27 @@ mod tests {
                         target: non_utf8_path.clone(),
                         program_args: Vec::new(),
                     },
-                    args_list_with_invalid_utf8_string(&["run"]),
+                    args_with_non_utf8_arg(&["run"]),
                 ),
                 (
                     Command::Build {
                         target: non_utf8_path.clone(),
                         output: None,
                     },
-                    args_list_with_invalid_utf8_string(&["build"]),
+                    args_with_non_utf8_arg(&["build"]),
                 ),
                 (
                     Command::Build {
                         target: None,
                         output: non_utf8_path.clone(),
                     },
-                    args_list_with_invalid_utf8_string(&["build", "-o"]),
+                    args_with_non_utf8_arg(&["build", "-o"]),
                 ),
                 (
                     Command::Check {
                         target: non_utf8_path.clone(),
                     },
-                    args_list_with_invalid_utf8_string(&["check"]),
+                    args_with_non_utf8_arg(&["check"]),
                 ),
                 (
                     Command::Test {
@@ -884,19 +884,19 @@ mod tests {
                         name: None,
                         seed: None,
                     },
-                    args_list_with_invalid_utf8_string(&["test"]),
+                    args_with_non_utf8_arg(&["test"]),
                 ),
                 (
                     Command::Fmt {
                         check: false,
-                        paths: vec![PathBuf::from(non_utf8_string())],
+                        paths: vec![PathBuf::from(non_utf8_arg())],
                     },
-                    args_list_with_invalid_utf8_string(&["fmt"]),
+                    args_with_non_utf8_arg(&["fmt"]),
                 ),
             ];
 
-            for (cmd, args) in cases {
-                assert_eq!(parse_args(&args), Ok(cmd), "{args:?}");
+            for (expected, args) in cases {
+                assert_eq!(parse_args(&args), Ok(expected), "{args:?}");
             }
         }
     }
