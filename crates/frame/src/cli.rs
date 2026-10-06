@@ -749,8 +749,8 @@ mod tests {
 
         #[test]
         fn rejects_non_utf8_subcommand() {
-            let args = args_list_with_invalid_utf8(&[]);
-            let non_utf8 = lossy_string(&non_utf8_os_string());
+            let args = args_list_with_invalid_utf8_string(&[]);
+            let non_utf8 = lossy_string(&non_utf8_string());
 
             assert_fails_with(
                 parse_args(&args),
@@ -761,8 +761,8 @@ mod tests {
 
         #[test]
         fn test_rejects_non_utf8_name() {
-            let args = args_list_with_invalid_utf8(&["test", "--name"]);
-            let non_utf8 = lossy_string(&non_utf8_os_string());
+            let args = args_list_with_invalid_utf8_string(&["test", "--name"]);
+            let non_utf8 = lossy_string(&non_utf8_string());
 
             assert_fails_with(
                 parse_args(&args),
@@ -773,8 +773,8 @@ mod tests {
 
         #[test]
         fn explain_rejects_non_utf8_code() {
-            let args = args_list_with_invalid_utf8(&["explain"]);
-            let non_utf8 = lossy_string(&non_utf8_os_string());
+            let args = args_list_with_invalid_utf8_string(&["explain"]);
+            let non_utf8 = lossy_string(&non_utf8_string());
 
             assert_fails_with(
                 parse_args(&args),
@@ -785,13 +785,13 @@ mod tests {
 
         #[test]
         fn run_accepts_non_utf8_program_args() {
-            let args = args_list_with_invalid_utf8(&["run", "a.fm"]);
+            let args = args_list_with_invalid_utf8_string(&["run", "a.fm"]);
 
             assert_eq!(
                 parse_args(&args),
                 Ok(Command::Run {
                     target: Some(PathBuf::from("a.fm")),
-                    program_args: vec![non_utf8_os_string()]
+                    program_args: vec![non_utf8_string()]
                 }),
             )
         }
@@ -799,12 +799,12 @@ mod tests {
         #[test]
         fn rejects_non_utf8_second_target() {
             let cases = [
-                args_list_with_invalid_utf8(&["build", "a.fm"]),
-                args_list_with_invalid_utf8(&["check", "a.fm"]),
-                args_list_with_invalid_utf8(&["test", "a.fm"]),
+                args_list_with_invalid_utf8_string(&["build", "a.fm"]),
+                args_list_with_invalid_utf8_string(&["check", "a.fm"]),
+                args_list_with_invalid_utf8_string(&["test", "a.fm"]),
             ];
 
-            let lossy = lossy_string(&non_utf8_os_string());
+            let lossy = lossy_string(&non_utf8_string());
 
             for args in cases {
                 assert_fails_with(
@@ -817,7 +817,7 @@ mod tests {
 
         #[test]
         fn accepts_non_utf8_paths_as_is() {
-            let non_utf8_path = Some(PathBuf::from(non_utf8_os_string()));
+            let non_utf8_path = Some(PathBuf::from(non_utf8_string()));
 
             let cases = [
                 (
@@ -825,27 +825,27 @@ mod tests {
                         target: non_utf8_path.clone(),
                         program_args: Vec::new(),
                     },
-                    args_list_with_invalid_utf8(&["run"]),
+                    args_list_with_invalid_utf8_string(&["run"]),
                 ),
                 (
                     Command::Build {
                         target: non_utf8_path.clone(),
                         output: None,
                     },
-                    args_list_with_invalid_utf8(&["build"]),
+                    args_list_with_invalid_utf8_string(&["build"]),
                 ),
                 (
                     Command::Build {
                         target: None,
                         output: non_utf8_path.clone(),
                     },
-                    args_list_with_invalid_utf8(&["build", "-o"]),
+                    args_list_with_invalid_utf8_string(&["build", "-o"]),
                 ),
                 (
                     Command::Check {
                         target: non_utf8_path.clone(),
                     },
-                    args_list_with_invalid_utf8(&["check"]),
+                    args_list_with_invalid_utf8_string(&["check"]),
                 ),
                 (
                     Command::Test {
@@ -853,14 +853,14 @@ mod tests {
                         name: None,
                         seed: None,
                     },
-                    args_list_with_invalid_utf8(&["test"]),
+                    args_list_with_invalid_utf8_string(&["test"]),
                 ),
                 (
                     Command::Fmt {
                         check: false,
-                        paths: vec![PathBuf::from(non_utf8_os_string())],
+                        paths: vec![PathBuf::from(non_utf8_string())],
                     },
-                    args_list_with_invalid_utf8(&["fmt"]),
+                    args_list_with_invalid_utf8_string(&["fmt"]),
                 ),
             ];
 
