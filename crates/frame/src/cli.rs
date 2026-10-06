@@ -267,6 +267,7 @@ fn parse_target(target: &OsStr, actual: Option<PathBuf>) -> Result<PathBuf, Usag
         Some(t) if is_option(target) => Err(UsageError::UnknownOption(t.to_string())),
         None if is_option(target) => Err(UsageError::UnknownOption(lossy_string(target))),
         Some(t) if actual.is_some() => Err(UsageError::UnexpectedArgument(t.to_string())),
+        None if actual.is_some() => Err(UsageError::UnexpectedArgument(lossy_string(target))), // keep paths as is, even invalids ones
         _ => Ok(PathBuf::from(target)),
     }
 }
