@@ -168,7 +168,7 @@ fn parse_build(args: &[OsString]) -> Result<Command, UsageError> {
                     Ok(PathBuf::from(v))
                 })?)
             }
-            _ => target = Some(parse_target(arg, target)?),
+            _ => target = Some(parse_target(arg, &target)?),
         }
     }
 
@@ -179,7 +179,7 @@ fn parse_check(args: &[OsString]) -> Result<Command, UsageError> {
     let mut target: Option<PathBuf> = None;
 
     for arg in args {
-        target = Some(parse_target(arg, target)?);
+        target = Some(parse_target(arg, &target)?);
     }
 
     Ok(Command::Check { target })
@@ -204,7 +204,7 @@ fn parse_test(args: &[OsString]) -> Result<Command, UsageError> {
                     parse_text(v).and_then(parse_seed)
                 })?)
             }
-            _ => target = Some(parse_target(arg, target)?),
+            _ => target = Some(parse_target(arg, &target)?),
         }
     }
 
@@ -219,10 +219,7 @@ fn parse_fmt(args: &[OsString]) -> Result<Command, UsageError> {
         match arg.to_str() {
             Some("--check") if check => return Err(UsageError::RepeatedOption("--check")),
             Some("--check") => check = true,
-            Some(unknown) if is_option(arg) => {
-                return Err(UsageError::UnknownOption(unknown.to_string()));
-            }
-            None if is_option(arg) => {
+            _ if is_option(arg) => {
                 return Err(UsageError::UnknownOption(lossy_string(arg)));
             }
             _ => paths.push(PathBuf::from(arg)),
@@ -262,14 +259,16 @@ fn parse_version(args: &[OsString]) -> Result<Command, UsageError> {
 
 // Utility parsers
 
-fn parse_target(target: &OsStr, actual: Option<PathBuf>) -> Result<PathBuf, UsageError> {
-    match target.to_str() {
-        Some(t) if is_option(target) => Err(UsageError::UnknownOption(t.to_string())),
-        None if is_option(target) => Err(UsageError::UnknownOption(lossy_string(target))),
-        Some(t) if actual.is_some() => Err(UsageError::UnexpectedArgument(t.to_string())),
-        None if actual.is_some() => Err(UsageError::UnexpectedArgument(lossy_string(target))),
-        _ => Ok(PathBuf::from(target)),
+fn parse_target(target: &OsStr, actual: &Option<PathBuf>) -> Result<PathBuf, UsageError> {
+    if is_option(target) {
+        return Err(UsageError::UnknownOption(lossy_string(target)));
     }
+
+    if actual.is_some() {
+        return Err(UsageError::UnexpectedArgument(lossy_string(target)));
+    }
+
+    Ok(PathBuf::from(target))
 }
 
 fn parse_option_value<T>(
@@ -781,7 +780,6 @@ mod tests {
                     target: Some(PathBuf::from("a.fm")),
                     program_args: vec![non_utf8_os_string()]
                 }),
-                parse_args(&args)
             )
         }
 
