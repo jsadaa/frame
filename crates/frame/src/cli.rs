@@ -723,14 +723,26 @@ mod tests {
         use super::assert_fails_with;
         use std::os::unix::ffi::OsStringExt;
 
-        fn non_utf8_os_string() -> OsString {
+        fn non_utf8_string() -> OsString {
             OsString::from_vec(vec![0x66, 0xFF])
         }
 
-        fn args_list_with_invalid_utf8(args: &[&str]) -> Vec<OsString> {
+        fn non_utf8_option() -> OsString {
+            OsString::from_vec(vec![0x2D, 0xFF])
+        }
+
+        fn args_list_with_invalid_utf8_string(args: &[&str]) -> Vec<OsString> {
             let mut args: Vec<OsString> = args.iter().map(OsString::from).collect();
 
-            args.push(non_utf8_os_string());
+            args.push(non_utf8_string());
+
+            args
+        }
+
+        fn args_list_with_invalid_utf8_option(args: &[&str]) -> Vec<OsString> {
+            let mut args: Vec<OsString> = args.iter().map(OsString::from).collect();
+
+            args.push(non_utf8_option());
 
             args
         }
