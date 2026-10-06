@@ -300,7 +300,7 @@ fn parse_seed(seed: String) -> Result<u64, UsageError> {
 fn parse_text(arg: &OsStr) -> Result<String, UsageError> {
     arg.to_str()
         .map(String::from)
-        .ok_or(UsageError::InvalidUtf8(lossy_string(arg)))
+        .ok_or_else(|| UsageError::InvalidUtf8(lossy_string(arg)))
 }
 
 // Utilities
