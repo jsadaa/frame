@@ -222,6 +222,9 @@ fn parse_fmt(args: &[OsString]) -> Result<Command, UsageError> {
             Some(unknown) if is_option(arg) => {
                 return Err(UsageError::UnknownOption(unknown.to_string()));
             }
+            None if is_option(arg) => {
+                return Err(UsageError::UnknownOption(lossy_string(arg)));
+            }
             _ => paths.push(PathBuf::from(arg)),
         }
     }
@@ -262,6 +265,7 @@ fn parse_version(args: &[OsString]) -> Result<Command, UsageError> {
 fn parse_target(target: &OsStr, actual: Option<PathBuf>) -> Result<PathBuf, UsageError> {
     match target.to_str() {
         Some(t) if is_option(target) => Err(UsageError::UnknownOption(t.to_string())),
+        None if is_option(target) => Err(UsageError::UnknownOption(lossy_string(target))),
         Some(t) if actual.is_some() => Err(UsageError::UnexpectedArgument(t.to_string())),
         _ => Ok(PathBuf::from(target)),
     }
