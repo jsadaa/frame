@@ -776,6 +776,7 @@ mod tests {
             let args = args_list_with_invalid_utf8(&["run", "a.fm"]);
 
             assert_eq!(
+                parse_args(&args),
                 Ok(Command::Run {
                     target: Some(PathBuf::from("a.fm")),
                     program_args: vec![non_utf8_os_string()]
@@ -845,7 +846,7 @@ mod tests {
                 (
                     Command::Fmt {
                         check: false,
-                        paths: vec![non_utf8_path.clone().unwrap()],
+                        paths: vec![PathBuf::from(non_utf8_os_string())],
                     },
                     args_list_with_invalid_utf8(&["fmt"]),
                 ),
