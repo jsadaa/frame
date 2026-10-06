@@ -714,6 +714,15 @@ mod tests {
     }
 
     #[test]
+    fn explain_rejects_options() {
+        assert_fails_with(
+            parse(&["explain", "MUT-04", "--verbose"]),
+            UsageError::UnknownOption("--verbose".to_string()),
+            "unknown option '--verbose'",
+        );
+    }
+
+    #[test]
     fn explain_rejects_second_code() {
         assert_fails_with(
             parse(&["explain", "MUT-4", "MUT-5"]),
@@ -841,7 +850,6 @@ mod tests {
             let lossy = lossy_string(&non_utf8_option());
 
             for args in cases {
-                println!("{args:?}");
                 assert_fails_with(
                     parse_args(&args),
                     UsageError::UnknownOption(lossy.clone()),
