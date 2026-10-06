@@ -1,4 +1,7 @@
-//! The frame cli parsing module
+//! Parsing of the `frame` command line (CLI-1 to CLI-9).
+//!
+//! [`parse_args`] turns the arguments into a [`Command`], or refuses them with a
+//! [`UsageError`]. It is pure: it reads no environment and prints nothing.
 
 use std::{
     ffi::{OsStr, OsString},
@@ -6,80 +9,82 @@ use std::{
     path::PathBuf,
 };
 
-/// The frame cli subcommands, each holding its own specific args
+/// A `frame` command line, parsed but not executed.
 #[derive(Debug, PartialEq, Eq)]
 pub enum Command {
-    /// The run command
+    /// `frame run [target [arguments...]]`: compiles in debug mode, then runs (CLI-3).
     Run {
-        /// An optional target path, pointing to a frame file (`*.fm`) or a package root
+        /// The script (`.fm`) or package directory; `None` means the enclosing package (CLI-2).
         target: Option<PathBuf>,
-        /// Optional arguments to pass to the targeted program
+        /// The arguments that follow the target, passed to the program as given.
         program_args: Vec<OsString>,
     },
-    /// The build command
+    /// `frame build [target] [-o output]`: produces an executable (CLI-4).
     Build {
-        /// An optional target path, pointing to a frame file (`*.fm`) or a package root
+        /// The script (`.fm`) or package directory; `None` means the enclosing package (CLI-2).
         target: Option<PathBuf>,
-        /// An optional output path
+        /// Where `-o` writes the executable; `None` means the current directory.
         output: Option<PathBuf>,
     },
-    /// The check command
+    /// `frame check [target]`: checks the program and its tests (CLI-5).
     Check {
-        /// An optional target path, pointing to a frame file (`*.fm`) or a package root
+        /// The script (`.fm`) or package directory; `None` means the enclosing package (CLI-2).
         target: Option<PathBuf>,
     },
-    /// The test command
+    /// `frame test [target] [--name text] [--seed seed]`: runs the tests (CLI-6).
     Test {
-        /// An optional target path, pointing to a frame file (`*.fm`) or a package root
+        /// The script (`.fm`) or package directory; `None` means the enclosing package (CLI-2).
         target: Option<PathBuf>,
-        /// An optional name, filtering the matching tests
+        /// With `--name`, only the tests whose name contains this text run.
         name: Option<String>,
-        /// An optional seed, as a u64
+        /// With `--seed`, the seed of the run, written as 1 to 16 hexadecimal digits.
         seed: Option<u64>,
     },
-    /// The format command
+    /// `frame fmt [--check] [paths...]`: formats source files (CLI-7).
     Fmt {
-        /// If true, name the files it would format and fails without fixing if applicable (dry-run)
+        /// With `--check`, nothing is rewritten: the command names the files that would
+        /// change, and fails if there are any.
         check: bool,
-        /// Optional paths, a frame file (`*.fm`) or a package root
+        /// The files and directories to format; empty means the sources of the enclosing package.
         paths: Vec<PathBuf>,
     },
-    /// The explain command
+    /// `frame explain code`: explains a rule (CLI-8).
     Explain {
-        /// A frame code, by its reference name (ex: "MUT-4")
+        /// The code of the rule, such as `MUT-4`.
         code: String,
     },
-    /// The help option
+    /// `frame --help`: describes the subcommands (CLI-1).
     Help,
-    /// The version option
+    /// `frame --version`: gives the version of the toolchain (CLI-1).
     Version,
 }
 
-/// A usage error from the input args
+/// A command line that does not follow CLI-1: a usage error (CLI-9).
 #[derive(Debug, PartialEq, Eq)]
 pub enum UsageError {
-    /// Some arguments are not valid UTF-8
+    /// An argument that must be text, such as a test name, a seed or a rule code, is not
+    /// valid UTF-8.
     InvalidUtf8(String),
-    /// The subcommand is missing
+    /// No subcommand is given.
     MissingCommand,
-    /// The subcommand is unknown
+    /// The subcommand is not one of CLI-1.
     UnknownCommand(String),
-    /// The seed is invalid
+    /// The seed is not 1 to 16 hexadecimal digits (CLI-6).
     InvalidSeed(String),
-    /// The subcommand expects an argument
+    /// The subcommand lacks its required argument.
     CommandExpectsArgument {
-        /// The command invoked
+        /// The subcommand.
         command: &'static str,
-        /// The expected argument name
+        /// What the subcommand expects, article included, such as `a code`.
         expected: &'static str,
     },
-    /// The option expect a value
+    /// The option is given without its value.
     OptionExpectsValue(&'static str),
-    /// The option is repeated
+    /// The option is given more than once.
     RepeatedOption(&'static str),
-    /// An unexpected argument
+    /// The argument has no place on the command line, such as a second target.
     UnexpectedArgument(String),
-    /// An unknown option
+    /// The subcommand accepts no such option.
     UnknownOption(String),
 }
 
@@ -114,11 +119,11 @@ impl fmt::Display for UsageError {
     }
 }
 
-/// Parses a command from an argument list
+/// Parses the arguments of `frame`, without the program name.
 ///
 /// # Errors
 ///
-/// Returns a `UsageError` when the arguments or the command are invalid
+/// Returns a [`UsageError`] when the arguments do not follow CLI-1.
 pub fn parse_args(args: &[OsString]) -> Result<Command, UsageError> {
     let Some((subcommand, rest)) = args.split_first() else {
         return Err(UsageError::MissingCommand);
@@ -145,6 +150,7 @@ fn parse_run(args: &[OsString]) -> Result<Command, UsageError> {
         [target, ..] if is_option(target) => {
             return Err(UsageError::UnknownOption(lossy_string(target)));
         }
+        // Everything after the target belongs to the program, even what looks like an option.
         [target, program_args @ ..] => (Some(PathBuf::from(target)), program_args.to_vec()),
         [] => (None, Vec::new()),
     };
@@ -277,6 +283,7 @@ fn parse_option_value<T>(
     option: &'static str,
     convert: impl FnOnce(&OsStr) -> Result<T, UsageError>,
 ) -> Result<T, UsageError> {
+    // The repetition comes first, so that `-o a -o` reports it rather than the missing value.
     if current.is_some() {
         return Err(UsageError::RepeatedOption(option));
     }
@@ -287,6 +294,7 @@ fn parse_option_value<T>(
 }
 
 fn parse_seed(seed: String) -> Result<u64, UsageError> {
+    // `from_str_radix` accepts a leading `+`: the digits are checked first.
     if !(1usize..=16usize).contains(&seed.chars().count())
         || !seed.chars().all(|c| c.is_ascii_hexdigit())
     {
@@ -308,6 +316,8 @@ fn lossy_string(arg: &OsStr) -> String {
     arg.to_string_lossy().into_owned()
 }
 
+// The encoded bytes, rather than `to_str`, so that a non-UTF-8 argument that starts with `-`
+// is an option too.
 fn is_option(arg: &OsStr) -> bool {
     arg.as_encoded_bytes().starts_with(b"-")
 }
