@@ -241,6 +241,7 @@ fn parse_fmt(args: &[OsString]) -> Result<Command, UsageError> {
 fn parse_explain(args: &[OsString]) -> Result<Command, UsageError> {
     match args {
         [code, ..] if is_option(code) => Err(UsageError::UnknownOption(lossy_string(code))),
+        [code, extra] if is_option(extra) => Err(UsageError::UnknownOption(lossy_string(extra))),
         [_, extra, ..] => Err(UsageError::UnexpectedArgument(lossy_string(extra))),
         [code] => Ok(Command::Explain {
             code: parse_text(code)?,
