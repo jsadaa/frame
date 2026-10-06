@@ -76,7 +76,7 @@ pub enum UsageError {
     /// The option expect a value
     OptionExpectsValue(&'static str),
     /// The option is repeated
-    RepeatedOption(String),
+    RepeatedOption(&'static str),
     /// An unexpected argument
     UnexpectedArgument(String),
     /// An unknown option
@@ -112,14 +112,6 @@ impl fmt::Display for UsageError {
             }
         }
     }
-}
-
-trait OptionValue<'a, T> {
-    fn parse_option(
-        value: Option<&'a OsString>,
-        actual: Option<T>,
-        option_name: &'static str,
-    ) -> Result<T, UsageError>;
 }
 
 /// Parses a command from an argument list
@@ -171,7 +163,11 @@ fn parse_build(args: &[OsString]) -> Result<Command, UsageError> {
 
     while let Some(arg) = iter.next() {
         match arg.to_str() {
-            Some("-o") => output = Some(PathBuf::parse_option(iter.next(), output, "-o")?),
+            Some("-o") => {
+                output = Some(parse_option_value(iter.next(), &output, "-o", |v| {
+                    Ok(PathBuf::from(v))
+                })?)
+            }
             _ => target = Some(parse_target(arg, target)?),
         }
     }
@@ -198,8 +194,16 @@ fn parse_test(args: &[OsString]) -> Result<Command, UsageError> {
 
     while let Some(arg) = iter.next() {
         match arg.to_str() {
-            Some("--name") => name = Some(String::parse_option(iter.next(), name, "--name")?),
-            Some("--seed") => seed = Some(u64::parse_option(iter.next(), seed, "--seed")?),
+            Some("--name") => {
+                name = Some(parse_option_value(iter.next(), &name, "--name", |v| {
+                    parse_text(v)
+                })?)
+            }
+            Some("--seed") => {
+                seed = Some(parse_option_value(iter.next(), &seed, "--seed", |v| {
+                    parse_text(v).and_then(parse_seed)
+                })?)
+            }
             _ => target = Some(parse_target(arg, target)?),
         }
     }
@@ -213,7 +217,8 @@ fn parse_fmt(args: &[OsString]) -> Result<Command, UsageError> {
 
     for arg in args {
         match arg.to_str() {
-            Some("--check") => check = parse_flag(check, "--check")?,
+            Some("--check") if check => return Err(UsageError::RepeatedOption("--check")),
+            Some("--check") => check = true,
             Some(unknown) if is_option(arg) => {
                 return Err(UsageError::UnknownOption(unknown.to_string()));
             }
@@ -222,14 +227,6 @@ fn parse_fmt(args: &[OsString]) -> Result<Command, UsageError> {
     }
 
     Ok(Command::Fmt { check, paths })
-}
-
-fn parse_flag(actual: bool, flag_name: &str) -> Result<bool, UsageError> {
-    if actual {
-        return Err(UsageError::RepeatedOption(flag_name.to_string()));
-    }
-
-    Ok(true)
 }
 
 fn parse_explain(args: &[OsString]) -> Result<Command, UsageError> {
@@ -270,6 +267,21 @@ fn parse_target(target: &OsStr, actual: Option<PathBuf>) -> Result<PathBuf, Usag
 
 // Utility parsers
 
+fn parse_option_value<T>(
+    value: Option<&OsString>,
+    current: &Option<T>,
+    option: &'static str,
+    convert: impl FnOnce(&OsStr) -> Result<T, UsageError>,
+) -> Result<T, UsageError> {
+    if current.is_some() {
+        return Err(UsageError::RepeatedOption(option));
+    }
+
+    value
+        .ok_or(UsageError::OptionExpectsValue(option))
+        .and_then(|v| convert(v))
+}
+
 fn parse_seed(seed: String) -> Result<u64, UsageError> {
     if !(1usize..=16usize).contains(&seed.chars().count())
         || !seed.chars().all(|c| c.is_ascii_hexdigit())
@@ -284,54 +296,6 @@ fn parse_text(arg: &OsStr) -> Result<String, UsageError> {
     arg.to_str()
         .map(String::from)
         .ok_or(UsageError::InvalidUtf8(lossy_string(arg)))
-}
-
-impl<'a> OptionValue<'a, String> for String {
-    fn parse_option(
-        value: Option<&'a OsString>,
-        actual: Option<String>,
-        option_name: &'static str,
-    ) -> Result<String, UsageError> {
-        if actual.is_some() {
-            return Err(UsageError::RepeatedOption(option_name.to_string()));
-        }
-
-        value
-            .ok_or(UsageError::OptionExpectsValue(option_name))
-            .and_then(|v| parse_text(v))
-    }
-}
-
-impl<'a> OptionValue<'a, PathBuf> for PathBuf {
-    fn parse_option(
-        value: Option<&'a OsString>,
-        actual: Option<PathBuf>,
-        option_name: &'static str,
-    ) -> Result<PathBuf, UsageError> {
-        if actual.is_some() {
-            return Err(UsageError::RepeatedOption(option_name.to_string()));
-        }
-
-        value
-            .ok_or(UsageError::OptionExpectsValue(option_name))
-            .map(PathBuf::from)
-    }
-}
-
-impl<'a> OptionValue<'a, u64> for u64 {
-    fn parse_option(
-        value: Option<&'a OsString>,
-        actual: Option<u64>,
-        option_name: &'static str,
-    ) -> Result<u64, UsageError> {
-        if actual.is_some() {
-            return Err(UsageError::RepeatedOption(option_name.to_string()));
-        }
-
-        value
-            .ok_or(UsageError::OptionExpectsValue(option_name))
-            .and_then(|v| parse_text(v).and_then(parse_seed))
-    }
 }
 
 // Utilities
@@ -499,7 +463,7 @@ mod tests {
     fn build_rejects_repeated_option() {
         assert_fails_with(
             parse(&["build", "-o", "a", "-o", "b"]),
-            UsageError::RepeatedOption("-o".to_string()),
+            UsageError::RepeatedOption("-o"),
             "option '-o' is repeated",
         );
     }
@@ -622,7 +586,7 @@ mod tests {
     fn test_rejects_repeated_names() {
         assert_fails_with(
             parse(&["test", "--name", "a.fm", "--name", "b.fm"]),
-            UsageError::RepeatedOption("--name".to_string()),
+            UsageError::RepeatedOption("--name"),
             "option '--name' is repeated",
         );
     }
@@ -640,7 +604,7 @@ mod tests {
     fn test_rejects_repeated_seeds() {
         assert_fails_with(
             parse(&["test", "--seed", "77", "--seed", "77"]),
-            UsageError::RepeatedOption("--seed".to_string()),
+            UsageError::RepeatedOption("--seed"),
             "option '--seed' is repeated",
         );
     }
@@ -695,7 +659,7 @@ mod tests {
         let result = parse(&["fmt", "--check", "--check"]);
         assert_fails_with(
             result,
-            UsageError::RepeatedOption("--check".to_string()),
+            UsageError::RepeatedOption("--check"),
             "option '--check' is repeated",
         );
     }
