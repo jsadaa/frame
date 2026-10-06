@@ -257,6 +257,8 @@ fn parse_version(args: &[OsString]) -> Result<Command, UsageError> {
     }
 }
 
+// Utility parsers
+
 fn parse_target(target: &OsStr, actual: Option<PathBuf>) -> Result<PathBuf, UsageError> {
     match target.to_str() {
         Some(t) if is_option(target) => Err(UsageError::UnknownOption(t.to_string())),
@@ -264,8 +266,6 @@ fn parse_target(target: &OsStr, actual: Option<PathBuf>) -> Result<PathBuf, Usag
         _ => Ok(PathBuf::from(target)),
     }
 }
-
-// Utility parsers
 
 fn parse_option_value<T>(
     value: Option<&OsString>,
