@@ -136,8 +136,14 @@ pub fn parse_args(args: &[OsString]) -> Result<Command, UsageError> {
         Some("test") => parse_test(rest),
         Some("fmt") => parse_fmt(rest),
         Some("explain") => parse_explain(rest),
-        Some("--help") => parse_help(rest),
-        Some("--version") => parse_version(rest),
+        Some("--help") => match rest.first() {
+            Some(arg) => Err(UsageError::UnexpectedArgument(lossy_string(arg))),
+            None => Ok(Command::Help),
+        },
+        Some("--version") => match rest.first() {
+            Some(arg) => Err(UsageError::UnexpectedArgument(lossy_string(arg))),
+            None => Ok(Command::Version),
+        },
         Some(unknown) => Err(UsageError::UnknownCommand(unknown.to_owned())),
         None => Err(UsageError::UnknownCommand(lossy_string(subcommand))),
     }
@@ -250,20 +256,6 @@ fn parse_explain(args: &[OsString]) -> Result<Command, UsageError> {
             command: "explain",
             expected: "a code",
         }),
-    }
-}
-
-fn parse_help(args: &[OsString]) -> Result<Command, UsageError> {
-    match args.first() {
-        Some(arg) => Err(UsageError::UnexpectedArgument(lossy_string(arg))),
-        None => Ok(Command::Help),
-    }
-}
-
-fn parse_version(args: &[OsString]) -> Result<Command, UsageError> {
-    match args.first() {
-        Some(arg) => Err(UsageError::UnexpectedArgument(lossy_string(arg))),
-        None => Ok(Command::Version),
     }
 }
 
