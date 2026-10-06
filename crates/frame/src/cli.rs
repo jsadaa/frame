@@ -166,7 +166,7 @@ fn parse_build(args: &[OsString]) -> Result<Command, UsageError> {
             Some("-o") => {
                 output = Some(parse_option_value(iter.next(), &output, "-o", |v| {
                     Ok(PathBuf::from(v))
-                })?)
+                })?);
             }
             _ => target = Some(parse_target(arg, &target)?),
         }
@@ -197,12 +197,12 @@ fn parse_test(args: &[OsString]) -> Result<Command, UsageError> {
             Some("--name") => {
                 name = Some(parse_option_value(iter.next(), &name, "--name", |v| {
                     parse_text(v)
-                })?)
+                })?);
             }
             Some("--seed") => {
                 seed = Some(parse_option_value(iter.next(), &seed, "--seed", |v| {
                     parse_text(v).and_then(parse_seed)
-                })?)
+                })?);
             }
             _ => target = Some(parse_target(arg, &target)?),
         }
