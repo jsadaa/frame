@@ -201,9 +201,12 @@ fn parse_test(args: &[OsString]) -> Result<Command, UsageError> {
     while let Some(arg) = iter.next() {
         match arg.to_str() {
             Some("--name") => {
-                name = Some(parse_option_value(iter.next(), &name, "--name", |v| {
-                    parse_text(v)
-                })?);
+                name = Some(parse_option_value(
+                    iter.next(),
+                    &name,
+                    "--name",
+                    parse_text,
+                )?);
             }
             Some("--seed") => {
                 seed = Some(parse_option_value(iter.next(), &seed, "--seed", |v| {
