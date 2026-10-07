@@ -106,12 +106,12 @@ fn unknown_option_fails_is_a_usage_error() {
 
 #[test]
 fn subcommands_are_not_implemented_yet() {
-    let cases = [
+    let cases: [&[&str]; 6] = [
         &["run", "x.fm"],
-        &["build", ""],
-        &["check", ""],
-        &["test", ""],
-        &["fmt", ""],
+        &["build"],
+        &["check"],
+        &["test"],
+        &["fmt"],
         &["explain", "MUT-4"],
     ];
 
