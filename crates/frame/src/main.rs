@@ -52,11 +52,7 @@ fn print_outcome(outcome: &Outcome) {
         Outcome::Success(Some(text)) => {
             println!("{text}");
         }
-        Outcome::UsageError(e) => eprintln!(
-            "error: {e}
-
-{HELP_HINT}"
-        ),
+        Outcome::UsageError(e) => eprintln!("{}", usage_error(&e.to_string())),
         Outcome::NotImplementedYet(name) => eprintln!("frame {name}' is not implemented yet"),
         Outcome::Success(None) => (),
     }
@@ -82,4 +78,8 @@ fn execute(command: &Command) -> Outcome {
         Command::Help => Outcome::Success(Some(HELP.to_string())),
         Command::Version => Outcome::Success(Some(format!("frame {FRAME_VERSION}"))),
     }
+}
+
+fn usage_error(message: &str) -> String {
+    format!("error: {message}\n{HELP_HINT}")
 }
