@@ -100,7 +100,7 @@ fn unknown_command_is_a_usage_error() {
 }
 
 #[test]
-fn unknown_option_fails_is_a_usage_error() {
+fn unknown_option_is_a_usage_error() {
     assert_refused(execute_command(&["check", "--verbose"]), 2, "--verbose");
 }
 
