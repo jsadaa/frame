@@ -66,35 +66,17 @@ fn exit_code(outcome: &Outcome) -> ExitCode {
     }
 }
 
-fn execute(command: Command) -> Outcome {
+fn execute(command: &Command) -> Outcome {
     match command {
-        Command::Run { .. } => {
-            Outcome::NotImplementedYet("'frame run' is not implemented yet".to_string())
+        Command::Run { .. }
+        | Command::Build { .. }
+        | Command::Test { .. }
+        | Command::Check { .. }
+        | Command::Fmt { .. }
+        | Command::Explain { .. } => {
+            Outcome::NotImplementedYet(format!("'frame {command}' is not implemented yet"))
         }
-        Command::Build { .. } => {
-            Outcome::NotImplementedYet("'frame build' is not implemented yet".to_string())
-        }
-        Command::Test { .. } => {
-            Outcome::NotImplementedYet("'frame test' is not implemented yet".to_string())
-        }
-        Command::Check { .. } => {
-            Outcome::NotImplementedYet("'frame check' is not implemented yet".to_string())
-        }
-        Command::Fmt { .. } => {
-            Outcome::NotImplementedYet("'frame fmt' is not implemented yet".to_string())
-        }
-        Command::Explain { .. } => {
-            Outcome::NotImplementedYet("'frame explain' is not implemented yet".to_string())
-        }
-        Command::Help => handle_help(),
-        Command::Version => handle_version(),
+        Command::Help => Outcome::Success(Some(HELP.to_string())),
+        Command::Version => Outcome::Success(Some(format!("frame {FRAME_VERSION}"))),
     }
-}
-
-fn handle_help() -> Outcome {
-    Outcome::Success(Some(HELP.to_string()))
-}
-
-fn handle_version() -> Outcome {
-    Outcome::Success(Some(format!("frame {}", FRAME_VERSION)))
 }
