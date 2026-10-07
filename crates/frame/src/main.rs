@@ -36,12 +36,12 @@ fn main() -> ExitCode {
         Err(usage_error) => Outcome::UsageError(usage_error),
     };
 
-    dispatch_to_std(&outcome);
+    print_outcome(&outcome);
 
     exit_code(&outcome)
 }
 
-fn dispatch_to_std(outcome: &Outcome) {
+fn print_outcome(outcome: &Outcome) {
     match outcome {
         Outcome::Success(out) => {
             if let Some(out) = out {
