@@ -2,7 +2,10 @@
 
 mod cli;
 
-use std::process::ExitCode;
+use std::{
+    io::{self, Error, Write},
+    process::ExitCode,
+};
 
 use crate::cli::Command;
 
@@ -41,25 +44,35 @@ fn main() -> ExitCode {
         Err(usage_error) => Outcome::UsageError(usage_error),
     };
 
-    print_outcome(&outcome);
-    exit_code(&outcome)
+    let mut stdout = io::stdout().lock();
+    let mut stderr = io::stderr().lock();
+
+    let write = write(&outcome, &mut stdout, &mut stderr)
+        .and_then(|()| stdout.flush())
+        .and_then(|()| stderr.flush());
+
+    exit_code(&outcome, write)
 }
 
 /// Writes the outcome: the help and the version on the standard output, every other
 /// message of `frame` on the standard error (CLI-9).
-fn print_outcome(outcome: &Outcome) {
+fn write(outcome: &Outcome, out: &mut impl Write, err: &mut impl Write) -> io::Result<()> {
     match outcome {
-        Outcome::Success(Some(text)) => {
-            println!("{text}");
-        }
-        Outcome::UsageError(e) => eprintln!("{}", usage_error(&e.to_string())),
-        Outcome::NotImplementedYet(name) => eprintln!("'frame {name}' is not implemented yet"),
-        Outcome::Success(None) => (),
+        Outcome::Success(Some(text)) => writeln!(out, "{text}"),
+        Outcome::UsageError(e) => writeln!(err, "{}", usage_error(&e.to_string())),
+        Outcome::NotImplementedYet(name) => writeln!(err, "'frame {name}' is not implemented yet"),
+        Outcome::Success(None) => Ok(()),
     }
 }
 
 /// Returns the exit code of the outcome. The table of CLI-9 lives here, and only here.
-fn exit_code(outcome: &Outcome) -> ExitCode {
+fn exit_code(outcome: &Outcome, write: Result<(), Error>) -> ExitCode {
+    if let Err(error) = write
+        && error.kind() == io::ErrorKind::BrokenPipe
+    {
+        return ExitCode::from(141);
+    }
+
     match outcome {
         Outcome::Success(_) => ExitCode::from(0),
         Outcome::NotImplementedYet(_) => ExitCode::from(1),
