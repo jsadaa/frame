@@ -1,6 +1,6 @@
-//! The frame command line interface integration tests
+//! The `frame` command line interface integration tests.
 
-use std::process::{Command, Output};
+use std::process::Command;
 
 const HELP: &str = "Usage: frame <command> [arguments]
 
@@ -19,100 +19,91 @@ Options:
 
 const FRAME_VERSION: &str = env!("CARGO_PKG_VERSION");
 
-fn execute_command(args: &[&str], message: &str) -> Output {
-    Command::new(env!("CARGO_BIN_EXE_frame"))
+fn execute_command(args: &[&str]) -> (String, String, Option<i32>) {
+    let output = Command::new(env!("CARGO_BIN_EXE_frame"))
         .args(args)
         .output()
-        .expect(message)
+        .expect("the frame binary should start");
+
+    (
+        String::from_utf8(output.stdout).expect("stdout should be UTF-8"),
+        String::from_utf8(output.stderr).expect("stderr should be UTF-8"),
+        output.status.code(),
+    )
 }
 
-#[test]
-fn help_option_display_commands_information() {
-    let output = execute_command(
-        &["--help"],
-        "the help option should output frame commands information",
+fn assert_accepted(outcome: (String, String, Option<i32>), expected_content: &str) {
+    let (stdout, stderr, code) = outcome;
+    assert_eq!(
+        code,
+        Some(0),
+        "the exit code should be 0. actual : {code:?}",
     );
-
-    assert_eq!(output.status.code(), Some(0));
-    let stdout = String::from_utf8(output.stdout).expect("stdout should be UTF-8");
-    assert_eq!(stdout, HELP.to_string());
-    let stderr = String::from_utf8(output.stderr).expect("stderr should be UTF-8");
-    assert!(stderr.is_empty());
-}
-
-#[test]
-fn version_display_frame_current_version() {
-    let output = execute_command(
-        &["--version"],
-        "the version option should output frame current version",
+    assert_eq!(
+        stdout, expected_content,
+        "the std output should match the expected content: {expected_content}"
     );
-
-    assert_eq!(output.status.code(), Some(0));
-    let stdout = String::from_utf8(output.stdout).expect("stdout should be UTF-8");
-    assert_eq!(stdout, format!("frame {FRAME_VERSION}\n"));
-    let stderr = String::from_utf8(output.stderr).expect("stderr should be UTF-8");
-    assert!(stderr.is_empty());
+    assert!(stderr.is_empty(), "the std error should be empty");
 }
 
-#[test]
-fn no_args_display_help_hint() {
-    let output = execute_command(
-        &[],
-        "the frame command with no args should display the help hint",
+fn assert_refused(
+    outcome: (String, String, Option<i32>),
+    expected_code: i32,
+    expected_content: &str,
+) {
+    let (stdout, stderr, code) = outcome;
+    assert_eq!(
+        code,
+        Some(expected_code),
+        "the exit code should be 1 or 2. actual : {code:?}"
     );
-
-    assert_eq!(output.status.code(), Some(2));
-    let stdout = String::from_utf8(output.stdout).expect("stdout should be UTF-8");
-    assert!(stdout.is_empty());
-    let stderr = String::from_utf8(output.stderr).expect("stderr should be UTF-8");
-    assert!(stderr.contains("frame --help"));
-}
-
-#[test]
-fn unknown_command_fails() {
-    let output = execute_command(
-        &["compile"],
-        "An unknown command should output an error containing the command",
+    assert!(stdout.is_empty(), "the std output should be empty");
+    assert!(
+        stderr.contains(expected_content),
+        "the std error should match the expected content: {expected_content}"
     );
-
-    assert_eq!(output.status.code(), Some(2));
-    let stdout = String::from_utf8(output.stdout).expect("stdout should be UTF-8");
-    assert!(stdout.is_empty());
-    let stderr = String::from_utf8(output.stderr).expect("stderr should be UTF-8");
-    assert!(stderr.contains("compile"));
 }
 
 #[test]
-fn unknown_option_fails() {
-    let output = execute_command(
-        &["check", "--verbose"],
-        "An unknown option should output an error containing the option",
+fn help_lists_every_subcommand() {
+    assert_accepted(execute_command(&["--help"]), HELP);
+}
+
+#[test]
+fn version_displays_frame_current_version() {
+    assert_accepted(
+        execute_command(&["--version"]),
+        &format!("frame {FRAME_VERSION}\n"),
     );
-
-    assert_eq!(output.status.code(), Some(2));
-    let stdout = String::from_utf8(output.stdout).expect("stdout should be UTF-8");
-    assert!(stdout.is_empty());
-    let stderr = String::from_utf8(output.stderr).expect("stderr should be UTF-8");
-    assert!(stderr.contains("--verbose"));
 }
 
 #[test]
-fn not_implemented_commands_output_not_implemented_yet() {
-    let message = "A command which is not implemented yet should output 'not implemented yet'";
+fn missing_command_points_to_help() {
+    assert_refused(execute_command(&[]), 2, "frame --help");
+}
+
+#[test]
+fn unknown_command_is_a_usage_error() {
+    assert_refused(execute_command(&["compile"]), 2, "compile");
+}
+
+#[test]
+fn unknown_option_fails_is_a_usage_error() {
+    assert_refused(execute_command(&["check", "--verbose"]), 2, "--verbose");
+}
+
+#[test]
+fn subcommands_are_not_implemented_yet() {
     let cases = [
-        execute_command(&["run", "x.fm"], message),
-        execute_command(&["build", ""], message),
-        execute_command(&["check", ""], message),
-        execute_command(&["test", ""], message),
-        execute_command(&["fmt", ""], message),
-        execute_command(&["explain", "MUT-4"], message),
+        &["run", "x.fm"],
+        &["build", ""],
+        &["check", ""],
+        &["test", ""],
+        &["fmt", ""],
+        &["explain", "MUT-4"],
     ];
 
-    for output in cases {
-        assert_eq!(output.status.code(), Some(1));
-        let stdout = String::from_utf8(output.stdout).expect("stdout should be UTF-8");
-        assert!(stdout.is_empty());
-        let stderr = String::from_utf8(output.stderr).expect("stderr should be UTF-8");
-        assert!(stderr.contains("not implemented yet"));
+    for args in cases {
+        assert_refused(execute_command(args), 1, "not implemented yet");
     }
 }
