@@ -1,6 +1,9 @@
 //! The `frame` command line interface integration tests.
 
-use std::process::Command;
+use std::{
+    io,
+    process::{Command, Stdio},
+};
 
 const HELP: &str = "Usage: frame <command> [arguments]
 
@@ -125,4 +128,38 @@ fn subcommands_are_not_implemented_yet() {
     for (args, name) in cases {
         assert_refused(execute_command(args), 1, &not_implemented(name));
     }
+}
+
+#[test]
+fn closed_std_closed_pipe_returns_141() {
+    let args = &["--help"];
+    let (reader, writer) = io::pipe().expect("a pipe should open");
+    // drop the reader to close the pipe
+    drop(reader);
+
+    let output = Command::new(env!("CARGO_BIN_EXE_frame"))
+        .args(args)
+        .stdout(Stdio::from(writer))
+        .output()
+        .expect("the frame binary should start");
+
+    assert_eq!(output.status.code(), Some(141));
+    assert!(output.stderr.is_empty());
+}
+
+#[test]
+fn closed_err_pipe_returns_141() {
+    let args = &["compile"];
+    let (reader, writer) = io::pipe().expect("a pipe should open");
+    // drop the reader to close the pipe
+    drop(reader);
+
+    let output = Command::new(env!("CARGO_BIN_EXE_frame"))
+        .args(args)
+        .stderr(Stdio::from(writer))
+        .output()
+        .expect("the frame binary should start");
+
+    assert_eq!(output.status.code(), Some(141));
+    assert!(output.stdout.is_empty());
 }
