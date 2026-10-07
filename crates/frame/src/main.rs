@@ -52,7 +52,7 @@ fn print_outcome(outcome: &Outcome) {
 {HELP_HINT}"
         ),
         Outcome::NotImplementedYet(m) => eprintln!("{m}"),
-        _ => (),
+        Outcome::Success(None) => (),
     }
 }
 
