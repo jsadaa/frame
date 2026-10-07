@@ -54,7 +54,7 @@ fn assert_accepted(outcome: Outcome, expected_stdout: &str) {
     assert_eq!(stderr, "", "stderr of frame {args:?}");
 }
 
-fn assert_refused(outcome: Outcome, expected_code: i32, expected_in_stderr: &str) {
+fn assert_refused(outcome: Outcome, expected_code: i32, expected_stderr: &str) {
     let Outcome {
         args,
         stdout,
@@ -64,10 +64,15 @@ fn assert_refused(outcome: Outcome, expected_code: i32, expected_in_stderr: &str
 
     assert_eq!(code, Some(expected_code), "exit code of frame {args:?}");
     assert_eq!(stdout, "", "stdout of frame {args:?}");
-    assert!(
-        stderr.contains(expected_in_stderr),
-        "stderr of frame {args:?} should contain {expected_in_stderr:?}: {stderr:?}"
-    );
+    assert_eq!(stderr, expected_stderr, "stderr of frame {args:?}");
+}
+
+fn usage_error(message: &str) -> String {
+    format!("error: {message}\nrun 'frame --help' for more information\n")
+}
+
+fn not_implemented(name: &str) -> String {
+    format!("'frame {name}' is not implemented yet\n")
 }
 
 #[test]
@@ -85,31 +90,39 @@ fn version_displays_frame_current_version() {
 
 #[test]
 fn missing_command_points_to_help() {
-    assert_refused(execute_command(&[]), 2, "frame --help");
+    assert_refused(execute_command(&[]), 2, &usage_error("missing command"));
 }
 
 #[test]
 fn unknown_command_is_a_usage_error() {
-    assert_refused(execute_command(&["compile"]), 2, "compile");
+    assert_refused(
+        execute_command(&["compile"]),
+        2,
+        &usage_error("unknown command 'compile'"),
+    );
 }
 
 #[test]
 fn unknown_option_is_a_usage_error() {
-    assert_refused(execute_command(&["check", "--verbose"]), 2, "--verbose");
+    assert_refused(
+        execute_command(&["check", "--verbose"]),
+        2,
+        &usage_error("unknown option '--verbose'"),
+    );
 }
 
 #[test]
 fn subcommands_are_not_implemented_yet() {
-    let cases: [&[&str]; 6] = [
-        &["run", "x.fm"],
-        &["build"],
-        &["check"],
-        &["test"],
-        &["fmt"],
-        &["explain", "MUT-4"],
+    let cases: [(&[&str], &str); 6] = [
+        (&["run", "x.fm"], "run"),
+        (&["build"], "build"),
+        (&["check"], "check"),
+        (&["test"], "test"),
+        (&["fmt"], "fmt"),
+        (&["explain", "MUT-4"], "explain"),
     ];
 
-    for args in cases {
-        assert_refused(execute_command(args), 1, "not implemented yet");
+    for (args, name) in cases {
+        assert_refused(execute_command(args), 1, &not_implemented(name));
     }
 }

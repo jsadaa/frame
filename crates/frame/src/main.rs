@@ -53,7 +53,7 @@ fn print_outcome(outcome: &Outcome) {
             println!("{text}");
         }
         Outcome::UsageError(e) => eprintln!("{}", usage_error(&e.to_string())),
-        Outcome::NotImplementedYet(name) => eprintln!("frame {name}' is not implemented yet"),
+        Outcome::NotImplementedYet(name) => eprintln!("'frame {name}' is not implemented yet"),
         Outcome::Success(None) => (),
     }
 }
