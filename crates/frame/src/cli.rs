@@ -59,6 +59,23 @@ pub enum Command {
     Version,
 }
 
+impl fmt::Display for Command {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        let name = match self {
+            Command::Run { .. } => "run",
+            Command::Build { .. } => "build",
+            Command::Check { .. } => "check",
+            Command::Test { .. } => "test",
+            Command::Fmt { .. } => "fmt",
+            Command::Explain { .. } => "explain",
+            Command::Help => "help",
+            Command::Version => "version",
+        };
+
+        writeln!(f, "{name}")
+    }
+}
+
 /// A command line that does not follow CLI-1: a usage error (CLI-9).
 #[derive(Debug, PartialEq, Eq)]
 pub enum UsageError {
