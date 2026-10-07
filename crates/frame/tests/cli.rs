@@ -20,6 +20,8 @@ Options:
 const FRAME_VERSION: &str = env!("CARGO_PKG_VERSION");
 
 struct Outcome {
+    // Kept so that a failed assertion names the case.
+    args: Vec<String>,
     stdout: String,
     stderr: String,
     code: Option<i32>,
@@ -32,47 +34,39 @@ fn execute_command(args: &[&str]) -> Outcome {
         .expect("the frame binary should start");
 
     Outcome {
+        args: args.iter().map(ToString::to_string).collect(),
         stdout: String::from_utf8(output.stdout).expect("stdout should be UTF-8"),
         stderr: String::from_utf8(output.stderr).expect("stderr should be UTF-8"),
         code: output.status.code(),
     }
 }
 
-fn assert_accepted(outcome: Outcome, expected_content: &str) {
+fn assert_accepted(outcome: Outcome, expected_stdout: &str) {
     let Outcome {
+        args,
         stdout,
         stderr,
         code,
     } = outcome;
 
-    assert_eq!(
-        code,
-        Some(0),
-        "the exit code should be 0. actual : {code:?}",
-    );
-    assert_eq!(
-        stdout, expected_content,
-        "the std output should match the expected content: {expected_content}"
-    );
-    assert!(stderr.is_empty(), "the std error should be empty");
+    assert_eq!(code, Some(0), "exit code of frame {args:?}");
+    assert_eq!(stdout, expected_stdout, "stdout of frame {args:?}");
+    assert_eq!(stderr, "", "stderr of frame {args:?}");
 }
 
-fn assert_refused(outcome: Outcome, expected_code: i32, expected_content: &str) {
+fn assert_refused(outcome: Outcome, expected_code: i32, expected_in_stderr: &str) {
     let Outcome {
+        args,
         stdout,
         stderr,
         code,
     } = outcome;
 
-    assert_eq!(
-        code,
-        Some(expected_code),
-        "the exit code should be 1 or 2. actual : {code:?}"
-    );
-    assert!(stdout.is_empty(), "the std output should be empty");
+    assert_eq!(code, Some(expected_code), "exit code of frame {args:?}");
+    assert_eq!(stdout, "", "stdout of frame {args:?}");
     assert!(
-        stderr.contains(expected_content),
-        "the std error should match the expected content: {expected_content}"
+        stderr.contains(expected_in_stderr),
+        "stderr of frame {args:?} should contain {expected_in_stderr:?}: {stderr:?}"
     );
 }
 
