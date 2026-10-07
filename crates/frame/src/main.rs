@@ -29,8 +29,8 @@ enum Outcome {
     Success(Option<String>),
     /// The command line does not follow CLI-1.
     UsageError(cli::UsageError),
-    /// The subcommand is not implemented yet. Provisional: each subcommand loses this
-    /// message at its milestone.
+    /// The subcommand of this name is not implemented yet. Provisional: each subcommand
+    /// loses this outcome at its milestone.
     NotImplementedYet(&'static str),
 }
 
