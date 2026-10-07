@@ -19,21 +19,32 @@ Options:
 
 const FRAME_VERSION: &str = env!("CARGO_PKG_VERSION");
 
-fn execute_command(args: &[&str]) -> (String, String, Option<i32>) {
+struct Outcome {
+    stdout: String,
+    stderr: String,
+    code: Option<i32>,
+}
+
+fn execute_command(args: &[&str]) -> Outcome {
     let output = Command::new(env!("CARGO_BIN_EXE_frame"))
         .args(args)
         .output()
         .expect("the frame binary should start");
 
-    (
-        String::from_utf8(output.stdout).expect("stdout should be UTF-8"),
-        String::from_utf8(output.stderr).expect("stderr should be UTF-8"),
-        output.status.code(),
-    )
+    Outcome {
+        stdout: String::from_utf8(output.stdout).expect("stdout should be UTF-8"),
+        stderr: String::from_utf8(output.stderr).expect("stderr should be UTF-8"),
+        code: output.status.code(),
+    }
 }
 
-fn assert_accepted(outcome: (String, String, Option<i32>), expected_content: &str) {
-    let (stdout, stderr, code) = outcome;
+fn assert_accepted(outcome: Outcome, expected_content: &str) {
+    let Outcome {
+        stdout,
+        stderr,
+        code,
+    } = outcome;
+
     assert_eq!(
         code,
         Some(0),
@@ -46,12 +57,13 @@ fn assert_accepted(outcome: (String, String, Option<i32>), expected_content: &st
     assert!(stderr.is_empty(), "the std error should be empty");
 }
 
-fn assert_refused(
-    outcome: (String, String, Option<i32>),
-    expected_code: i32,
-    expected_content: &str,
-) {
-    let (stdout, stderr, code) = outcome;
+fn assert_refused(outcome: Outcome, expected_code: i32, expected_content: &str) {
+    let Outcome {
+        stdout,
+        stderr,
+        code,
+    } = outcome;
+
     assert_eq!(
         code,
         Some(expected_code),
