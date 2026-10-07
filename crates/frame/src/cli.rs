@@ -60,6 +60,8 @@ pub enum Command {
 }
 
 impl Command {
+    /// Returns the word of the command line that selects this command: the subcommand,
+    /// `--help` or `--version` (CLI-1).
     pub fn name(&self) -> &'static str {
         match self {
             Command::Run { .. } => "run",

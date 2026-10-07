@@ -23,10 +23,15 @@ Options:
 const FRAME_VERSION: &str = env!("CARGO_PKG_VERSION");
 const HELP_HINT: &str = "run 'frame --help' for more information";
 
+/// How a command ends: what `frame` writes, and the exit code of CLI-9.
 enum Outcome {
+    /// The command succeeded; its text, if any, goes to the standard output.
     Success(Option<String>),
+    /// The command line does not follow CLI-1.
     UsageError(cli::UsageError),
-    NotImplementedYet(String),
+    /// The subcommand is not implemented yet. Provisional: each subcommand loses this
+    /// message at its milestone.
+    NotImplementedYet(&'static str),
 }
 
 fn main() -> ExitCode {
@@ -40,6 +45,8 @@ fn main() -> ExitCode {
     exit_code(&outcome)
 }
 
+/// Writes the outcome: the help and the version on the standard output, every other
+/// message of `frame` on the standard error (CLI-9).
 fn print_outcome(outcome: &Outcome) {
     match outcome {
         Outcome::Success(Some(text)) => {
@@ -55,6 +62,7 @@ fn print_outcome(outcome: &Outcome) {
     }
 }
 
+/// Returns the exit code of the outcome. The table of CLI-9 lives here, and only here.
 fn exit_code(outcome: &Outcome) -> ExitCode {
     match outcome {
         Outcome::Success(_) => ExitCode::from(0),
