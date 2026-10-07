@@ -49,8 +49,7 @@ fn print_outcome(outcome: &Outcome) {
         Outcome::UsageError(e) => eprintln!(
             "error: {e}
 
-{HELP_HINT}
-            "
+{HELP_HINT}"
         ),
         Outcome::NotImplementedYet(m) => eprintln!("{m}"),
         _ => (),
