@@ -32,7 +32,7 @@ enum Outcome {
 fn main() -> ExitCode {
     let args: Vec<_> = std::env::args_os().skip(1).collect();
     let outcome = match cli::parse_args(&args) {
-        Ok(command) => execute(command),
+        Ok(command) => execute(&command),
         Err(usage_error) => Outcome::UsageError(usage_error),
     };
 
