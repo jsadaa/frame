@@ -2,12 +2,11 @@
 
 mod cli;
 
+use crate::cli::Command;
 use std::{
     io::{self, Error, Write},
     process::ExitCode,
 };
-
-use crate::cli::Command;
 
 const HELP: &str = "Usage: frame <command> [arguments]
 
@@ -99,10 +98,8 @@ fn usage_error(message: &str) -> String {
 
 #[cfg(test)]
 mod tests {
-
-    use std::io::{self};
-
     use super::{ExitCode, FRAME_VERSION, HELP, Outcome, Write, cli, exit_code, write};
+    use std::io::{self};
 
     struct ClosedPipe;
     struct FailedDestination;
