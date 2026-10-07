@@ -59,20 +59,18 @@ pub enum Command {
     Version,
 }
 
-impl fmt::Display for Command {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        let name = match self {
+impl Command {
+    pub fn name(&self) -> &'static str {
+        match self {
             Command::Run { .. } => "run",
             Command::Build { .. } => "build",
             Command::Check { .. } => "check",
             Command::Test { .. } => "test",
             Command::Fmt { .. } => "fmt",
             Command::Explain { .. } => "explain",
-            Command::Help => "help",
-            Command::Version => "version",
-        };
-
-        writeln!(f, "{name}")
+            Command::Help => "--help",
+            Command::Version => "--version",
+        }
     }
 }
 

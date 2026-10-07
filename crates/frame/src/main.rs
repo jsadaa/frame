@@ -72,7 +72,7 @@ fn execute(command: &Command) -> Outcome {
         | Command::Check { .. }
         | Command::Fmt { .. }
         | Command::Explain { .. } => {
-            Outcome::NotImplementedYet(format!("'frame {command}' is not implemented yet"))
+            Outcome::NotImplementedYet(format!("'frame {}' is not implemented yet", command.name()))
         }
         Command::Help => Outcome::Success(Some(HELP.to_string())),
         Command::Version => Outcome::Success(Some(format!("frame {FRAME_VERSION}"))),
