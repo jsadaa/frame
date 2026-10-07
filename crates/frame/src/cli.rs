@@ -59,6 +59,23 @@ pub enum Command {
     Version,
 }
 
+impl Command {
+    /// Returns the word of the command line that selects this command: the subcommand,
+    /// `--help` or `--version` (CLI-1).
+    pub fn name(&self) -> &'static str {
+        match self {
+            Command::Run { .. } => "run",
+            Command::Build { .. } => "build",
+            Command::Check { .. } => "check",
+            Command::Test { .. } => "test",
+            Command::Fmt { .. } => "fmt",
+            Command::Explain { .. } => "explain",
+            Command::Help => "--help",
+            Command::Version => "--version",
+        }
+    }
+}
+
 /// A command line that does not follow CLI-1: a usage error (CLI-9).
 #[derive(Debug, PartialEq, Eq)]
 pub enum UsageError {
