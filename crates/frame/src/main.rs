@@ -43,10 +43,8 @@ fn main() -> ExitCode {
 
 fn print_outcome(outcome: &Outcome) {
     match outcome {
-        Outcome::Success(out) => {
-            if let Some(out) = out {
-                println!("{out}")
-            }
+        Outcome::Success(Some(text)) => {
+            println!("{text}");
         }
         Outcome::UsageError(e) => eprintln!(
             "error: {e}
@@ -55,6 +53,7 @@ fn print_outcome(outcome: &Outcome) {
             "
         ),
         Outcome::NotImplementedYet(m) => eprintln!("{m}"),
+        _ => (),
     }
 }
 
