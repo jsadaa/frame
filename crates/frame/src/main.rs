@@ -37,7 +37,6 @@ fn main() -> ExitCode {
     };
 
     print_outcome(&outcome);
-
     exit_code(&outcome)
 }
 
