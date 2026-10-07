@@ -57,7 +57,7 @@ fn print_outcome(outcome: &Outcome) {
 
 {HELP_HINT}"
         ),
-        Outcome::NotImplementedYet(m) => eprintln!("{m}"),
+        Outcome::NotImplementedYet(name) => eprintln!("frame {name}' is not implemented yet"),
         Outcome::Success(None) => (),
     }
 }
@@ -78,9 +78,7 @@ fn execute(command: &Command) -> Outcome {
         | Command::Test { .. }
         | Command::Check { .. }
         | Command::Fmt { .. }
-        | Command::Explain { .. } => {
-            Outcome::NotImplementedYet(format!("'frame {}' is not implemented yet", command.name()))
-        }
+        | Command::Explain { .. } => Outcome::NotImplementedYet(command.name()),
         Command::Help => Outcome::Success(Some(HELP.to_string())),
         Command::Version => Outcome::Success(Some(format!("frame {FRAME_VERSION}"))),
     }
