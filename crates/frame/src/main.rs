@@ -96,3 +96,113 @@ fn execute(command: &Command) -> Outcome {
 fn usage_error(message: &str) -> String {
     format!("error: {message}\n{HELP_HINT}")
 }
+
+#[cfg(test)]
+mod tests {
+
+    use std::io::{self};
+
+    use super::{ExitCode, FRAME_VERSION, HELP, Outcome, Write, cli, exit_code, write};
+
+    struct ClosedPipe;
+    struct FailedDestination;
+
+    impl Write for ClosedPipe {
+        fn write(&mut self, _: &[u8]) -> io::Result<usize> {
+            Err(io::ErrorKind::BrokenPipe.into())
+        }
+
+        fn flush(&mut self) -> io::Result<()> {
+            Ok(())
+        }
+    }
+
+    impl Write for FailedDestination {
+        fn write(&mut self, _: &[u8]) -> io::Result<usize> {
+            Err(io::ErrorKind::Other.into())
+        }
+
+        fn flush(&mut self) -> io::Result<()> {
+            Ok(())
+        }
+    }
+
+    fn assert_success_with(out: Vec<u8>, err: Vec<u8>, expected: &str) {
+        let text = String::from_utf8(out).expect("the output should be UTF-8");
+        assert_eq!(text, expected);
+        assert!(err.is_empty());
+    }
+
+    fn assert_success(out: Vec<u8>, err: Vec<u8>) {
+        assert!(out.is_empty());
+        assert!(err.is_empty());
+    }
+
+    fn assert_error(out: Vec<u8>, err: Vec<u8>, expected: &str) {
+        let text = String::from_utf8(err).expect("the output should be UTF-8");
+        assert!(out.is_empty());
+        assert_eq!(text, expected);
+    }
+
+    #[test]
+    fn writer_display_on_the_right_ouput() {
+        let version = format!("frame {FRAME_VERSION}\n");
+        let help = format!("{HELP}\n");
+
+        let cases: [(&str, Outcome); 5] = [
+            ("", Outcome::Success(None)),
+            (&help, Outcome::Success(Some(HELP.to_string()))),
+            (
+                &version,
+                Outcome::Success(Some(format!("frame {FRAME_VERSION}"))),
+            ),
+            (
+                "error: unknown command 'compile'\nrun 'frame --help' for more information\n",
+                Outcome::UsageError(cli::UsageError::UnknownCommand("compile".to_string())),
+            ),
+            (
+                "'frame run' is not implemented yet\n",
+                Outcome::NotImplementedYet("run"),
+            ),
+        ];
+
+        for (expected, outcome) in cases {
+            let mut out = Vec::new();
+            let mut err = Vec::new();
+            let _ = write(&outcome, &mut out, &mut err);
+
+            match outcome {
+                Outcome::Success(Some(_)) => assert_success_with(out, err, expected),
+                Outcome::Success(None) => assert_success(out, err),
+                Outcome::UsageError(_) | Outcome::NotImplementedYet(_) => {
+                    assert_error(out, err, expected)
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn broken_pipe_returns_141() {
+        let outcome = Outcome::Success(Some(HELP.to_string()));
+        let write = write(&outcome, &mut ClosedPipe, &mut ClosedPipe);
+
+        assert_eq!(exit_code(&outcome, write), ExitCode::from(141),);
+    }
+
+    #[test]
+    fn other_write_errors_returns_the_outcome_code() {
+        let cases: [Outcome; 2] = [
+            Outcome::Success(Some(HELP.to_string())),
+            Outcome::UsageError(cli::UsageError::UnknownCommand("compile".to_string())),
+        ];
+
+        for outcome in cases {
+            let write = write(&outcome, &mut FailedDestination, &mut FailedDestination);
+            let exit_code = exit_code(&outcome, write);
+            match outcome {
+                Outcome::Success(Some(_)) => assert_eq!(exit_code, ExitCode::from(0), "success"),
+                _ => assert_eq!(exit_code, ExitCode::from(2), "usage error"),
+            }
+        }
+    }
+}
