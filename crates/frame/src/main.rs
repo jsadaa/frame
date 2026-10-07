@@ -23,12 +23,9 @@ Options:
 const FRAME_VERSION: &str = env!("CARGO_PKG_VERSION");
 const HELP_HINT: &str = "run 'frame --help' for more information";
 
-#[allow(dead_code)]
 enum Outcome {
     Success(Option<String>),
-    Error,
     UsageError(cli::UsageError),
-    ProgramOut,
     NotImplementedYet(String),
 }
 
@@ -57,9 +54,6 @@ fn dispatch_to_std(outcome: &Outcome) {
 {HELP_HINT}
             "
         ),
-        Outcome::Error | Outcome::ProgramOut => {
-            unimplemented!("program error and program out is not implemented yet ")
-        }
         Outcome::NotImplementedYet(m) => eprintln!("{m}"),
     }
 }
@@ -67,9 +61,8 @@ fn dispatch_to_std(outcome: &Outcome) {
 fn exit_code(outcome: &Outcome) -> ExitCode {
     match outcome {
         Outcome::Success(_) => ExitCode::from(0),
-        Outcome::Error | Outcome::NotImplementedYet(_) => ExitCode::from(1),
+        Outcome::NotImplementedYet(_) => ExitCode::from(1),
         Outcome::UsageError(_) => ExitCode::from(2),
-        Outcome::ProgramOut => unimplemented!("program out exit code is not implemented yet"),
     }
 }
 
