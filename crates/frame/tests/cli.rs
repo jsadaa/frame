@@ -126,3 +126,50 @@ fn subcommands_are_not_implemented_yet() {
         assert_refused(execute_command(args), 1, &not_implemented(name));
     }
 }
+
+#[cfg(unix)]
+mod closed_pipe {
+    use std::{
+        io,
+        process::{Command, Stdio},
+    };
+
+    /// Returns a pipe whose reading end is closed before `frame` starts: its first write
+    /// fails every time, with no race between the two processes.
+    fn closed_pipe() -> Stdio {
+        let (reader, writer) = io::pipe().expect("a pipe should open");
+        drop(reader);
+
+        Stdio::from(writer)
+    }
+
+    #[test]
+    fn closed_stdout_exits_with_141() {
+        let args = &["--help"];
+        let std_out = closed_pipe();
+
+        let output = Command::new(env!("CARGO_BIN_EXE_frame"))
+            .args(args)
+            .stdout(std_out)
+            .output()
+            .expect("the frame binary should start");
+
+        assert_eq!(output.status.code(), Some(141));
+        assert_eq!(String::from_utf8_lossy(&output.stderr), "");
+    }
+
+    #[test]
+    fn closed_stderr_exits_with_141() {
+        let args = &["compile"];
+        let std_err = closed_pipe();
+
+        let output = Command::new(env!("CARGO_BIN_EXE_frame"))
+            .args(args)
+            .stderr(std_err)
+            .output()
+            .expect("the frame binary should start");
+
+        assert_eq!(output.status.code(), Some(141));
+        assert_eq!(String::from_utf8_lossy(&output.stdout), "");
+    }
+}
