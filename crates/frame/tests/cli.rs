@@ -155,7 +155,7 @@ mod closed_pipe {
             .expect("the frame binary should start");
 
         assert_eq!(output.status.code(), Some(141));
-        assert_eq!(output.stderr, Vec::new());
+        assert_eq!(String::from_utf8_lossy(&output.stderr), "");
     }
 
     #[test]
@@ -170,6 +170,6 @@ mod closed_pipe {
             .expect("the frame binary should start");
 
         assert_eq!(output.status.code(), Some(141));
-        assert_eq!(output.stdout, Vec::new());
+        assert_eq!(String::from_utf8_lossy(&output.stdout), "");
     }
 }
