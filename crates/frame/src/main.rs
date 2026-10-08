@@ -98,8 +98,8 @@ fn usage_error(error: &UsageError) -> String {
 
 #[cfg(test)]
 mod tests {
-    use super::{ExitCode, FRAME_VERSION, HELP, Outcome, Write, cli, exit_code, write};
-    use std::io::{self};
+    use super::{ExitCode, FRAME_VERSION, HELP, Outcome, Write, cli, exit_code, write_outcome};
+    use std::io;
 
     struct ClosedPipe;
     struct FailedDestination;
@@ -124,57 +124,41 @@ mod tests {
         }
     }
 
-    fn assert_success_with(out: Vec<u8>, err: Vec<u8>, expected: &str) {
-        let text = String::from_utf8(out).expect("the output should be UTF-8");
-        assert_eq!(text, expected);
-        assert!(err.is_empty());
-    }
-
-    fn assert_success(out: Vec<u8>, err: Vec<u8>) {
-        assert!(out.is_empty());
-        assert!(err.is_empty());
-    }
-
-    fn assert_error(out: Vec<u8>, err: Vec<u8>, expected: &str) {
-        let text = String::from_utf8(err).expect("the output should be UTF-8");
-        assert!(out.is_empty());
-        assert_eq!(text, expected);
-    }
-
     #[test]
     fn writer_display_on_the_right_ouput() {
         let version = format!("frame {FRAME_VERSION}\n");
         let help = format!("{HELP}\n");
 
-        let cases: [(&str, Outcome); 5] = [
-            ("", Outcome::Success(None)),
-            (&help, Outcome::Success(Some(HELP.to_string()))),
+        let cases: [(Outcome, &str, &str); 5] = [
+            (Outcome::Success(None), "", ""),
+            (Outcome::Success(Some(HELP.to_string())), &help, ""),
             (
-                &version,
                 Outcome::Success(Some(format!("frame {FRAME_VERSION}"))),
+                &version,
+                "",
             ),
             (
-                "error: unknown command 'compile'\nrun 'frame --help' for more information\n",
                 Outcome::UsageError(cli::UsageError::UnknownCommand("compile".to_string())),
+                "",
+                "error: unknown command 'compile'\nrun 'frame --help' for more information\n",
             ),
             (
-                "'frame run' is not implemented yet\n",
                 Outcome::NotImplementedYet("run"),
+                "",
+                "'frame run' is not implemented yet\n",
             ),
         ];
 
-        for (expected, outcome) in cases {
+        for (outcome, expected_out, expected_err) in cases {
             let mut out = Vec::new();
             let mut err = Vec::new();
-            let _ = write(&outcome, &mut out, &mut err);
+            write_outcome(&outcome, &mut out, &mut err).expect("writing to a Vec should not fail");
 
-            match outcome {
-                Outcome::Success(Some(_)) => assert_success_with(out, err, expected),
-                Outcome::Success(None) => assert_success(out, err),
-                Outcome::UsageError(_) | Outcome::NotImplementedYet(_) => {
-                    assert_error(out, err, expected)
-                }
-            }
+            let text_out = String::from_utf8(out).expect("the output should be UTF-8");
+            let text_err = String::from_utf8(err).expect("the output should be UTF-8");
+
+            assert_eq!(text_out, expected_out);
+            assert_eq!(text_err, expected_err);
         }
     }
 
@@ -188,18 +172,18 @@ mod tests {
 
     #[test]
     fn other_write_errors_returns_the_outcome_code() {
-        let cases: [Outcome; 2] = [
-            Outcome::Success(Some(HELP.to_string())),
-            Outcome::UsageError(cli::UsageError::UnknownCommand("compile".to_string())),
+        let cases: [(Outcome, ExitCode); 2] = [
+            (Outcome::Success(Some(HELP.to_string())), ExitCode::from(0)),
+            (
+                Outcome::UsageError(cli::UsageError::UnknownCommand("compile".to_string())),
+                ExitCode::from(2),
+            ),
         ];
 
-        for outcome in cases {
-            let write = write(&outcome, &mut FailedDestination, &mut FailedDestination);
-            let exit_code = exit_code(&outcome, write);
-            match outcome {
-                Outcome::Success(Some(_)) => assert_eq!(exit_code, ExitCode::from(0), "success"),
-                _ => assert_eq!(exit_code, ExitCode::from(2), "usage error"),
-            }
+        for (outcome, expected_code) in cases {
+            let write = write_outcome(&outcome, &mut FailedDestination, &mut FailedDestination);
+            let code = exit_code(&outcome, write);
+            assert_eq!(code, expected_code);
         }
     }
 }
