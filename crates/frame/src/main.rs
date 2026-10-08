@@ -166,7 +166,7 @@ mod tests {
         let outcome = Outcome::Success(Some(HELP.to_string()));
         let written = write_outcome(&outcome, &mut ClosedPipe, &mut ClosedPipe);
 
-        assert_eq!(exit_code(&outcome, written), ExitCode::from(141),);
+        assert_eq!(exit_code(&outcome, written), ExitCode::from(141));
     }
 
     #[test]
