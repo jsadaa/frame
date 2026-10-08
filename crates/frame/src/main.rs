@@ -46,16 +46,16 @@ fn main() -> ExitCode {
     let mut stdout = io::stdout().lock();
     let mut stderr = io::stderr().lock();
 
-    let write = write(&outcome, &mut stdout, &mut stderr)
+    let written = write_outcome(&outcome, &mut stdout, &mut stderr)
         .and_then(|()| stdout.flush())
         .and_then(|()| stderr.flush());
 
-    exit_code(&outcome, write)
+    exit_code(&outcome, written)
 }
 
 /// Writes the outcome: the help and the version on the standard output, every other
 /// message of `frame` on the standard error (CLI-9).
-fn write(outcome: &Outcome, out: &mut impl Write, err: &mut impl Write) -> io::Result<()> {
+fn write_outcome(outcome: &Outcome, out: &mut impl Write, err: &mut impl Write) -> io::Result<()> {
     match outcome {
         Outcome::Success(Some(text)) => writeln!(out, "{text}"),
         Outcome::UsageError(e) => writeln!(err, "{}", usage_error(&e.to_string())),
@@ -65,8 +65,8 @@ fn write(outcome: &Outcome, out: &mut impl Write, err: &mut impl Write) -> io::R
 }
 
 /// Returns the exit code of the outcome. The table of CLI-9 lives here, and only here.
-fn exit_code(outcome: &Outcome, write: Result<(), Error>) -> ExitCode {
-    if let Err(error) = write
+fn exit_code(outcome: &Outcome, written: io::Result<()>) -> ExitCode {
+    if let Err(error) = written
         && error.kind() == io::ErrorKind::BrokenPipe
     {
         return ExitCode::from(141);
