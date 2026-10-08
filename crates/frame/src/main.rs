@@ -162,7 +162,6 @@ mod tests {
     }
 
     #[test]
-    #[cfg(unix)]
     fn broken_pipe_returns_141() {
         let outcome = Outcome::Success(Some(HELP.to_string()));
         let written = write_outcome(&outcome, &mut ClosedPipe, &mut ClosedPipe);
