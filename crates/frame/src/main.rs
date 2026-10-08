@@ -2,7 +2,7 @@
 
 mod cli;
 
-use crate::cli::{Command, UsageError};
+use crate::cli::Command;
 use std::{
     io::{self, Write},
     process::ExitCode,
@@ -58,7 +58,7 @@ fn main() -> ExitCode {
 fn write_outcome(outcome: &Outcome, out: &mut impl Write, err: &mut impl Write) -> io::Result<()> {
     match outcome {
         Outcome::Success(Some(text)) => writeln!(out, "{text}"),
-        Outcome::UsageError(e) => writeln!(err, "{}", usage_error(e)),
+        Outcome::UsageError(e) => writeln!(err, "error: {e}\n{HELP_HINT}"),
         Outcome::NotImplementedYet(name) => writeln!(err, "'frame {name}' is not implemented yet"),
         Outcome::Success(None) => Ok(()),
     }
@@ -93,10 +93,6 @@ fn execute(command: &Command) -> Outcome {
         Command::Help => Outcome::Success(Some(HELP.to_string())),
         Command::Version => Outcome::Success(Some(format!("frame {FRAME_VERSION}"))),
     }
-}
-
-fn usage_error(error: &UsageError) -> String {
-    format!("error: {error}\n{HELP_HINT}")
 }
 
 #[cfg(test)]
