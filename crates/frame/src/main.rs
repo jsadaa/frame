@@ -2,9 +2,9 @@
 
 mod cli;
 
-use crate::cli::Command;
+use crate::cli::{Command, UsageError};
 use std::{
-    io::{self, Error, Write},
+    io::{self, Write},
     process::ExitCode,
 };
 
