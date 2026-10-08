@@ -125,7 +125,7 @@ mod tests {
     }
 
     #[test]
-    fn writer_display_on_the_right_ouput() {
+    fn writes_each_outcome_to_its_output() {
         let version = format!("frame {FRAME_VERSION}\n");
         let help = format!("{HELP}\n");
 
@@ -166,13 +166,13 @@ mod tests {
     #[cfg(unix)]
     fn broken_pipe_returns_141() {
         let outcome = Outcome::Success(Some(HELP.to_string()));
-        let write = write_outcome(&outcome, &mut ClosedPipe, &mut ClosedPipe);
+        let written = write_outcome(&outcome, &mut ClosedPipe, &mut ClosedPipe);
 
-        assert_eq!(exit_code(&outcome, write), ExitCode::from(141),);
+        assert_eq!(exit_code(&outcome, written), ExitCode::from(141),);
     }
 
     #[test]
-    fn other_write_errors_returns_the_outcome_code() {
+    fn other_write_errors_keep_the_outcome_code() {
         let cases: [(Outcome, ExitCode); 2] = [
             (Outcome::Success(Some(HELP.to_string())), ExitCode::from(0)),
             (
@@ -182,8 +182,8 @@ mod tests {
         ];
 
         for (outcome, expected_code) in cases {
-            let write = write_outcome(&outcome, &mut FailedDestination, &mut FailedDestination);
-            let code = exit_code(&outcome, write);
+            let written = write_outcome(&outcome, &mut FailedDestination, &mut FailedDestination);
+            let code = exit_code(&outcome, written);
             assert_eq!(code, expected_code);
         }
     }

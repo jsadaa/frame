@@ -143,7 +143,7 @@ mod closed_pipe {
     }
 
     #[test]
-    fn closed_std_closed_pipe_returns_141() {
+    fn closed_stdout_exits_with_141() {
         let args = &["--help"];
         let std_out = closed_pipe();
 
@@ -158,7 +158,7 @@ mod closed_pipe {
     }
 
     #[test]
-    fn closed_err_pipe_returns_141() {
+    fn closed_stderr_exits_with_141() {
         let args = &["compile"];
         let std_err = closed_pipe();
 
