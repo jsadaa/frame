@@ -134,9 +134,10 @@ mod closed_pipe {
         process::{Command, Stdio},
     };
 
+    /// Returns a pipe whose reading end is closed before `frame` starts: its first write
+    /// fails every time, with no race between the two processes.
     fn closed_pipe() -> Stdio {
         let (reader, writer) = io::pipe().expect("a pipe should open");
-        // drop the reader to close the pipe
         drop(reader);
 
         Stdio::from(writer)

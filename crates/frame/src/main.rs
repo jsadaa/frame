@@ -64,8 +64,11 @@ fn write_outcome(outcome: &Outcome, out: &mut impl Write, err: &mut impl Write) 
     }
 }
 
-/// Returns the exit code of the outcome. The table of CLI-9 lives here, and only here.
+/// Returns the exit code of the outcome, given the result of writing it. The table of
+/// CLI-9 lives here, and only here: a closed output gives 141; any other write error is
+/// ignored.
 fn exit_code(outcome: &Outcome, written: io::Result<()>) -> ExitCode {
+    // 128 + 13: the code a shell shows for a program killed by SIGPIPE, a signal Rust ignores.
     if let Err(error) = written
         && error.kind() == io::ErrorKind::BrokenPipe
     {
