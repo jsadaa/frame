@@ -1,9 +1,6 @@
 //! The `frame` command line interface integration tests.
 
-use std::{
-    io,
-    process::{Command, Stdio},
-};
+use std::process::Command;
 
 const HELP: &str = "Usage: frame <command> [arguments]
 
@@ -130,36 +127,48 @@ fn subcommands_are_not_implemented_yet() {
     }
 }
 
-#[test]
-fn closed_std_closed_pipe_returns_141() {
-    let args = &["--help"];
-    let (reader, writer) = io::pipe().expect("a pipe should open");
-    // drop the reader to close the pipe
-    drop(reader);
+#[cfg(unix)]
+mod closed_pipe {
+    use std::{
+        io,
+        process::{Command, Stdio},
+    };
 
-    let output = Command::new(env!("CARGO_BIN_EXE_frame"))
-        .args(args)
-        .stdout(Stdio::from(writer))
-        .output()
-        .expect("the frame binary should start");
+    fn closed_pipe() -> Stdio {
+        let (reader, writer) = io::pipe().expect("a pipe should open");
+        // drop the reader to close the pipe
+        drop(reader);
 
-    assert_eq!(output.status.code(), Some(141));
-    assert!(output.stderr.is_empty());
-}
+        Stdio::from(writer)
+    }
 
-#[test]
-fn closed_err_pipe_returns_141() {
-    let args = &["compile"];
-    let (reader, writer) = io::pipe().expect("a pipe should open");
-    // drop the reader to close the pipe
-    drop(reader);
+    #[test]
+    fn closed_std_closed_pipe_returns_141() {
+        let args = &["--help"];
+        let std_out = closed_pipe();
 
-    let output = Command::new(env!("CARGO_BIN_EXE_frame"))
-        .args(args)
-        .stderr(Stdio::from(writer))
-        .output()
-        .expect("the frame binary should start");
+        let output = Command::new(env!("CARGO_BIN_EXE_frame"))
+            .args(args)
+            .stdout(std_out)
+            .output()
+            .expect("the frame binary should start");
 
-    assert_eq!(output.status.code(), Some(141));
-    assert!(output.stdout.is_empty());
+        assert_eq!(output.status.code(), Some(141));
+        assert_eq!(output.stderr, Vec::new());
+    }
+
+    #[test]
+    fn closed_err_pipe_returns_141() {
+        let args = &["compile"];
+        let std_err = closed_pipe();
+
+        let output = Command::new(env!("CARGO_BIN_EXE_frame"))
+            .args(args)
+            .stderr(std_err)
+            .output()
+            .expect("the frame binary should start");
+
+        assert_eq!(output.status.code(), Some(141));
+        assert_eq!(output.stdout, Vec::new());
+    }
 }

@@ -163,9 +163,10 @@ mod tests {
     }
 
     #[test]
+    #[cfg(unix)]
     fn broken_pipe_returns_141() {
         let outcome = Outcome::Success(Some(HELP.to_string()));
-        let write = write(&outcome, &mut ClosedPipe, &mut ClosedPipe);
+        let write = write_outcome(&outcome, &mut ClosedPipe, &mut ClosedPipe);
 
         assert_eq!(exit_code(&outcome, write), ExitCode::from(141),);
     }
