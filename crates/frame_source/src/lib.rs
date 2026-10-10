@@ -1,45 +1,50 @@
-//! The `frame` source crate.
+//! Source files, and positions in their text.
+//!
+//! A [`SourceMap`] holds the files; a [`Span`] designates a piece of a file's text by byte
+//! offsets. Lines and columns ([`LineCol`]) are computed from an offset, by the
+//! [`SourceFile`], only to show a position (DIA-5).
 
 use std::fmt;
 
-/// A source file id.
+/// The id of a file in a [`SourceMap`]; only [`SourceMap::add`] makes one.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
 pub struct FileId(u32);
 
-/// A source file.
+/// A file of a [`SourceMap`]: its name, its text, and where its lines start.
 #[derive(Debug, Clone)]
 pub struct SourceFile {
-    /// The displayed name.
+    /// The name shown in locations, such as `src/main.fm`.
     name: String,
-    /// The text content of the source file.
     text: String,
-    /// The lines starts offsets, always contains at least one start (0), even if the text is empty.
-    lines_starts: Vec<u32>,
+    /// The byte offset where each line starts, in order; the first is 0, even for an empty
+    /// text.
+    line_starts: Vec<u32>,
 }
 
 impl SourceFile {
-    /// Get the name of the source file.
+    /// Returns the name shown in locations.
     pub fn name(&self) -> &str {
         &self.name
     }
 
-    /// Get the text of the source file.
+    /// Returns the text.
     pub fn text(&self) -> &str {
         &self.text
     }
 
-    /// Get the the line and column of an offset in the file.
+    /// Returns the line and the column of a byte offset, both counted from 1, the column in
+    /// characters (DIA-5). The offset of the end of the text is valid.
     ///
     /// # Panics
     ///
-    /// Panics if the offset in the text is in the middle of a multibyte char
-    pub fn offset_line_col(&self, offset: u32) -> LineCol {
+    /// Panics if `offset` is past the end of the text, or inside a character.
+    pub fn line_col(&self, offset: u32) -> LineCol {
         let line_index =
-            usize_to_u32(self.lines_starts.partition_point(|&start| start <= offset) - 1);
-        let line_start_offset = self.lines_starts[line_index as usize];
+            usize_to_u32(self.line_starts.partition_point(|&start| start <= offset) - 1);
+        let line_start = self.line_starts[line_index as usize];
 
         let column = usize_to_u32(
-            self.text[line_start_offset as usize..offset as usize]
+            self.text[line_start as usize..offset as usize]
                 .chars()
                 .count()
                 + 1,
@@ -51,54 +56,56 @@ impl SourceFile {
         }
     }
 
-    /// Get the text content of line number `index` as a string.
-    ///
-    /// Remove the trailing `'\n'` or `'\r\n'` at the end of the line.
-    /// Lines are indexed from 1.
+    /// Returns the text of a line, counted from 1, without its line ending: `\n` or `\r\n`
+    /// (LEX-3). A lone `\r` stays in the text.
     ///
     /// # Panics
     ///
-    /// Panic if the line doesn't exists in the file.
-    pub fn read_line(&self, line_number: u32) -> &str {
-        if line_number == 0 || self.lines_count() < line_number {
-            panic!("line {line_number} doesn't exists in the file");
+    /// Panics if the file has no line `line_number`.
+    pub fn line_text(&self, line_number: u32) -> &str {
+        if line_number == 0 || self.line_count() < line_number {
+            panic!(
+                "line {line_number} is out of range: the line count is {}",
+                self.line_count()
+            );
         }
 
         let line_index = line_number - 1;
-        let line_start_offset = *self
-            .lines_starts
+        let line_start = *self
+            .line_starts
             .get(line_index as usize)
-            .expect("at this point, we know the line number exists in the file");
+            .expect("the line number should be in range, as checked above");
 
-        // there's always at least one line index.
-        let line_end_offset = if let Some(next_line_start_offset) =
-            self.lines_starts.get((line_index + 1) as usize)
-        {
-            *next_line_start_offset
-        } else {
-            usize_to_u32(self.text.len())
-        };
+        // The last line has no next start: it ends with the text.
+        let line_end =
+            if let Some(next_line_start) = self.line_starts.get((line_index + 1) as usize) {
+                *next_line_start
+            } else {
+                usize_to_u32(self.text.len())
+            };
 
-        let line_text: &str = &self.text[line_start_offset as usize..line_end_offset as usize];
+        let line: &str = &self.text[line_start as usize..line_end as usize];
 
-        if let Some(stripped) = line_text.strip_suffix("\r\n") {
+        if let Some(stripped) = line.strip_suffix("\r\n") {
             return stripped;
         }
 
-        if let Some(stripped) = line_text.strip_suffix("\n") {
+        if let Some(stripped) = line.strip_suffix("\n") {
             return stripped;
         }
 
-        line_text
+        line
     }
 
-    /// Get the number of lines in the file text.
-    pub fn lines_count(&self) -> u32 {
-        usize_to_u32(self.lines_starts.len())
+    /// Returns the number of lines: one more than the number of line endings, so that an
+    /// empty text has one line.
+    pub fn line_count(&self) -> u32 {
+        usize_to_u32(self.line_starts.len())
     }
 }
 
-/// The line and the column of a location in a source file text.
+/// A line and a column, both counted from 1; the column counts characters, a tab as one
+/// (DIA-5).
 pub struct LineCol {
     line: u32,
     column: u32,
@@ -110,14 +117,14 @@ impl fmt::Display for LineCol {
     }
 }
 
-/// A location in a source file text.
+/// A position as diagnostics show it: `path:line:column` (DIA-5).
 pub struct Location {
     name: String,
     line_col: LineCol,
 }
 
 impl Location {
-    /// Create a Location from a line and column struct
+    /// Creates the location of `line_col` in the file named `name`.
     pub fn from_line_col(line_col: LineCol, name: &str) -> Self {
         Self {
             name: name.to_string(),
@@ -136,10 +143,10 @@ impl fmt::Display for Location {
     }
 }
 
-/// A collection of source files.
+/// The source files of a compilation, each designated by its [`FileId`].
 #[derive(Debug)]
 pub struct SourceMap {
-    inner: Vec<SourceFile>,
+    files: Vec<SourceFile>,
 }
 
 impl Default for SourceMap {
@@ -149,82 +156,83 @@ impl Default for SourceMap {
 }
 
 impl SourceMap {
-    /// Create a new empty `SourceMap`.
+    /// Creates an empty source map.
     pub fn new() -> Self {
-        SourceMap { inner: vec![] }
+        SourceMap { files: vec![] }
     }
 
-    /// Add a source file and get its id.
+    /// Adds a file, and returns its id. The starts of its lines are computed here, once.
     ///
     /// # Panics
     ///
-    /// Panics if the length of the source file content exceeds the size of a u32 integer.
+    /// Panics if the text is longer than `u32::MAX` bytes, the limit of the offsets.
     pub fn add(&mut self, name: String, text: String) -> FileId {
         if text.len() <= u32::MAX as usize {
-            let lines_starts = lines_starts(&text);
+            let line_starts = compute_line_starts(&text);
 
-            self.inner.push(SourceFile {
+            self.files.push(SourceFile {
                 name,
                 text,
-                lines_starts,
+                line_starts,
             });
 
-            return FileId(usize_to_u32(self.inner.len()));
+            return FileId(usize_to_u32(self.files.len()));
         }
 
-        panic!("the source file content length does not fit in a u32 integer");
+        panic!(
+            "the text of '{name}' is too long for 32-bit offsets: {} bytes",
+            text.len()
+        );
     }
 
-    /// Get a source file.
+    /// Returns the file of `id`.
     ///
     /// # Panics
     ///
-    /// Panics if `id` does not exists in the source map.
+    /// Panics if no file of this source map has this `id`: it comes from another one.
     pub fn file(&self, id: FileId) -> &SourceFile {
         let index = (id.0 - 1) as usize;
-        if let Some(file) = self.inner.get(index) {
+        if let Some(file) = self.files.get(index) {
             return file;
         }
 
-        panic!("the file id does not belong to the source map");
+        panic!("{id:?} is unknown to this source map");
     }
 }
 
-/// A chunk of text in a `File`, from `start` to `end` (exclusive).
+/// A piece of the text of a file, between two byte offsets: `start` is included, `end`
+/// excluded.
 #[derive(Debug, PartialEq, Eq)]
 pub struct Span {
-    /// The source file on the file system.
     file: FileId,
-    /// offset of the start in the text.
     start: u32,
-    /// offset of the end in the text, exclusive.
     end: u32,
 }
 
 impl Span {
-    /// Create a new span
+    /// Creates the span of `start..end` in `file`.
     pub fn new(file: FileId, start: u32, end: u32) -> Self {
         Self { file, start, end }
     }
 
-    /// Check if the span offset is 0.
+    /// Returns `true` if the span is empty: it marks a point, such as an insertion.
     pub fn is_empty(&self) -> bool {
         self.start == self.end
     }
 
-    /// Returns the length of the span.
+    /// Returns the length, in bytes.
     pub fn len(&self) -> u32 {
         self.end - self.start
     }
 
-    /// Return the minimum span covering `self` and `other` and everything in between.
+    /// Returns the smallest span that covers `self` and `other`, and what lies between.
     ///
     /// # Panics
     ///
-    /// Panics if the `other` span file is different from `self`.
-    pub fn minimum_span_with(&self, other: &Span) -> Span {
+    /// Panics if the two spans are in different files.
+    pub fn cover(&self, other: &Span) -> Span {
         if self.file != other.file {
-            panic!("a span can only be produced from two span of the same file")
+            panic!("cannot cover spans of two files: {self:?} and {other:?}")
         }
 
         Self {
@@ -235,28 +243,31 @@ impl Span {
     }
 }
 
-fn lines_starts(text: &str) -> Vec<u32> {
+/// Returns the byte offset where each line starts: 0, then the offset after each `\n`.
+fn compute_line_starts(text: &str) -> Vec<u32> {
     let mut bytes = text.as_bytes().iter().enumerate().peekable();
-    let mut lines_starts: Vec<u32> = vec![0];
+    let mut starts: Vec<u32> = vec![0];
 
     while let Some((i, byte)) = bytes.next() {
-        let index = usize_to_u32(i);
+        let offset = usize_to_u32(i);
 
         match byte {
-            b'\n' => lines_starts.push(index + 1),
+            b'\n' => starts.push(offset + 1),
             b'\r' if bytes.peek().is_some() && *bytes.peek().unwrap().1 == b'\n' => {
-                lines_starts.push(index + 2);
+                starts.push(offset + 2);
                 bytes.next();
             }
             _ => {}
         };
     }
 
-    lines_starts
+    starts
 }
 
+/// Converts a value bounded by the length of a text, which `SourceMap::add` checked to fit
+/// in a `u32`.
 fn usize_to_u32(n: usize) -> u32 {
-    u32::try_from(n).expect("a u32 conversion from usize can't fail at this point as the source file length fits in a u32 integer")
+    u32::try_from(n).expect("the value should fit in u32, as add() checked the text length")
 }
 
 #[cfg(test)]
@@ -270,111 +281,131 @@ mod tests {
         file.clone()
     }
 
-    fn assert_position(file: &SourceFile, offset: u32, expected_position: &str) {
+    fn assert_line_col(file: &SourceFile, offset: u32, expected: &str) {
         assert_eq!(
-            format!("{}", file.offset_line_col(offset)),
-            expected_position
+            format!("{}", file.line_col(offset)),
+            expected,
+            "offset {offset}"
         );
     }
 
-    fn assert_line(file: &SourceFile, line_number: u32, expected_line_text: &str) {
-        assert_eq!(file.read_line(line_number), expected_line_text);
+    fn assert_line_text(file: &SourceFile, line_number: u32, expected: &str) {
+        assert_eq!(file.line_text(line_number), expected, "line {line_number}");
     }
 
-    fn assert_lines_count(file: &SourceFile, expected_lines_count: u32) {
-        assert_eq!(file.lines_count(), expected_lines_count);
+    fn assert_line_count(file: &SourceFile, expected: u32) {
+        assert_eq!(file.line_count(), expected);
+    }
+
+    /// Counts the line and the column of `offset` character by character, from the start
+    /// of the text: slow, but obviously right.
+    fn naive_line_col(text: &str, offset: usize) -> (u32, u32) {
+        let mut line = 1;
+        let mut column = 1;
+        for (index, character) in text.char_indices() {
+            if index == offset {
+                break;
+            }
+            if character == '\n' {
+                line += 1;
+                column = 1;
+            } else {
+                column += 1;
+            }
+        }
+        (line, column)
     }
 
     #[test]
-    fn start_of_file() {
+    fn start_of_text_is_line_1_column_1() {
         let file = file_of("abc");
-        assert_position(&file, 0, "1:1");
-        assert_line(&file, 1, "abc");
-        assert_lines_count(&file, 1);
+        assert_line_col(&file, 0, "1:1");
+        assert_line_text(&file, 1, "abc");
+        assert_line_count(&file, 1);
     }
 
     #[test]
-    fn empty_file() {
+    fn empty_text_has_one_empty_line() {
         let file = file_of("");
-        assert_position(&file, 0, "1:1");
-        assert_line(&file, 1, "");
-        assert_lines_count(&file, 1);
+        assert_line_col(&file, 0, "1:1");
+        assert_line_text(&file, 1, "");
+        assert_line_count(&file, 1);
     }
 
     #[test]
-    fn after_line_jump() {
+    fn newline_starts_the_next_line() {
         let file = file_of("ab\ncd");
-        assert_position(&file, 3, "2:1");
-        assert_line(&file, 1, "ab");
-        assert_lines_count(&file, 2);
+        assert_line_col(&file, 3, "2:1");
+        assert_line_text(&file, 1, "ab");
+        assert_line_count(&file, 2);
     }
 
     #[test]
-    fn two_bytes_character() {
+    fn two_byte_character_is_one_column() {
         let file = file_of("let a = 1\nlet é = 2\n");
-        assert_position(&file, 17, "2:7");
-        assert_line(&file, 2, "let é = 2");
-        assert_lines_count(&file, 3);
+        assert_line_col(&file, 17, "2:7");
+        assert_line_text(&file, 2, "let é = 2");
+        assert_line_count(&file, 3);
     }
 
     #[test]
-    fn four_bytes_character() {
+    fn four_byte_character_is_one_column() {
         let file = file_of("a😀b");
-        assert_position(&file, 5, "1:3");
-        assert_line(&file, 1, "a😀b");
-        assert_lines_count(&file, 1);
+        assert_line_col(&file, 5, "1:3");
+        assert_line_text(&file, 1, "a😀b");
+        assert_line_count(&file, 1);
     }
 
     #[test]
-    fn tabulation() {
+    fn tab_is_one_column() {
         let file = file_of("\tx");
-        assert_position(&file, 1, "1:2");
-        assert_line(&file, 1, "\tx");
-        assert_lines_count(&file, 1);
+        assert_line_col(&file, 1, "1:2");
+        assert_line_text(&file, 1, "\tx");
+        assert_line_count(&file, 1);
     }
 
     #[test]
-    fn end_of_line_with_carriage_return() {
+    fn crlf_ends_a_line_without_its_cr() {
         let file = file_of("a\r\nb");
-        assert_position(&file, 3, "2:1");
-        assert_line(&file, 1, "a");
-        assert_lines_count(&file, 2);
+        assert_line_col(&file, 3, "2:1");
+        assert_line_text(&file, 1, "a");
+        assert_line_count(&file, 2);
     }
 
     #[test]
-    fn on_carriage_return() {
+    fn cr_of_a_crlf_stays_on_its_line() {
         let file = file_of("a\r\nb");
-        assert_position(&file, 1, "1:2");
-        assert_line(&file, 2, "b");
-        assert_lines_count(&file, 2);
+        assert_line_col(&file, 1, "1:2");
+        assert_line_text(&file, 2, "b");
+        assert_line_count(&file, 2);
     }
 
     #[test]
-    fn carriage_return_alone() {
+    fn lone_cr_does_not_end_a_line() {
         let file = file_of("a\r");
-        assert_position(&file, 0, "1:1");
-        assert_line(&file, 1, "a\r");
-        assert_lines_count(&file, 1);
+        assert_line_col(&file, 0, "1:1");
+        assert_line_text(&file, 1, "a\r");
+        assert_line_count(&file, 1);
     }
 
     #[test]
-    fn end_of_file_after_line_jump() {
+    fn end_of_text_after_a_newline_starts_a_line() {
         let file = file_of("ab\n");
-        assert_position(&file, 3, "2:1");
-        assert_line(&file, 1, "ab");
-        assert_lines_count(&file, 2);
+        assert_line_col(&file, 3, "2:1");
+        assert_line_text(&file, 1, "ab");
+        assert_line_count(&file, 2);
     }
 
     #[test]
-    fn end_of_file_without_line_jump() {
+    fn end_of_text_without_a_newline_follows_the_last_character() {
         let file = file_of("ab");
-        assert_position(&file, 2, "1:3");
-        assert_line(&file, 1, "ab");
-        assert_lines_count(&file, 1);
+        assert_line_col(&file, 2, "1:3");
+        assert_line_text(&file, 1, "ab");
+        assert_line_count(&file, 1);
     }
 
     #[test]
-    fn distincts_file_ids() {
+    fn added_files_get_distinct_ids() {
         let mut source_map = SourceMap::new();
         let id_a = source_map.add("a.fm".to_string(), "".to_string());
         let id_b = source_map.add("b.fm".to_string(), "".to_string());
@@ -382,71 +413,99 @@ mod tests {
     }
 
     #[test]
+    fn line_col_agrees_with_a_naive_count_at_every_offset() {
+        let text = concat!(
+            "ab\r\n",    // ASCII, CRLF
+            "\r\n",      // an empty line, CRLF
+            "\té = ü\n", // a tab, two-byte characters
+            "\n",        // an empty line, LF
+            "😀 x\ry\n", // a four-byte character, a lone CR
+            "中文",      // three-byte characters, no final newline
+        );
+        let file = file_of(text);
+        let offsets = text.char_indices().map(|(offset, _)| offset);
+
+        for offset in offsets.chain([text.len()]) {
+            let line_col = file.line_col(
+                u32::try_from(offset).expect("the offsets of the test text should fit in u32"),
+            );
+            assert_eq!(
+                (line_col.line, line_col.column),
+                naive_line_col(text, offset),
+                "offset {offset}"
+            );
+        }
+    }
+
+    #[test]
     #[should_panic(expected = "end byte index 3 is out of bounds for string of length 2")]
-    fn offset_out_of_text() {
+    fn line_col_panics_past_the_end_of_the_text() {
         let file = file_of("ab");
-        assert_position(&file, 3, "whatever");
+        assert_line_col(&file, 3, "whatever");
     }
 
     #[test]
     #[should_panic(
         expected = "end byte index 1 is not a char boundary; it is inside 'é' (bytes 0..2 of string)"
     )]
-    fn offset_in_the_middle_of_a_char() {
+    fn line_col_panics_inside_a_character() {
         let file = file_of("é");
-        assert_position(&file, 1, "whatever");
+        assert_line_col(&file, 1, "whatever");
     }
 
     #[test]
-    #[should_panic(expected = "line 0 doesn't exists in the file")]
-    fn line_0_out_of_file() {
+    #[should_panic(expected = "line 0 is out of range: the line count is 1")]
+    fn line_text_panics_on_line_0() {
         let file = file_of("ab");
-        assert_line(&file, 0, "whatever");
+        assert_line_text(&file, 0, "whatever");
     }
 
     #[test]
-    #[should_panic(expected = "line 2 doesn't exists in the file")]
-    fn line_out_of_file() {
+    #[should_panic(expected = "line 2 is out of range: the line count is 1")]
+    fn line_text_panics_past_the_last_line() {
         let file = file_of("ab");
-        assert_line(&file, 2, "whatever");
+        assert_line_text(&file, 2, "whatever");
     }
 
     #[test]
-    fn span_length() {
+    fn span_len_and_is_empty() {
         let cases = [
             (Span::new(FileId(1), 2, 5), 3, false),
             (Span::new(FileId(1), 4, 4), 0, true),
         ];
 
-        for (span, expected_length, is_empty) in cases {
-            assert_eq!(span.len(), expected_length);
-            assert_eq!(span.is_empty(), is_empty);
+        for (span, expected_len, expected_is_empty) in cases {
+            assert_eq!(span.len(), expected_len, "{span:?}");
+            assert_eq!(span.is_empty(), expected_is_empty, "{span:?}");
         }
     }
 
     #[test]
-    fn minimum_span() {
+    fn cover_spans_both_in_either_order() {
         let cases = [
             (Span::new(FileId(1), 2, 5), Span::new(FileId(1), 7, 9)),
             (Span::new(FileId(1), 7, 9), Span::new(FileId(1), 2, 5)),
         ];
 
-        for (span_from, span_with) in cases {
+        for (span, other) in cases {
             assert_eq!(
-                span_from.minimum_span_with(&span_with),
-                Span::new(FileId(1), 2, 9)
+                span.cover(&other),
+                Span::new(FileId(1), 2, 9),
+                "{span:?} covering {other:?}"
             );
         }
     }
 
     #[test]
-    #[should_panic(expected = "a span can only be produced from two span of the same file")]
-    fn minimum_span_from_different_file() {
-        Span::new(FileId(1), 2, 5).minimum_span_with(&Span::new(FileId(2), 7, 9));
+    #[should_panic(
+        expected = "cannot cover spans of two files: Span { file: FileId(1), start: 2, end: 5 } and Span { file: FileId(2), start: 7, end: 9 }"
+    )]
+    fn cover_panics_on_spans_of_two_files() {
+        Span::new(FileId(1), 2, 5).cover(&Span::new(FileId(2), 7, 9));
     }
 
     #[test]
-    fn display_location() {
+    fn location_displays_path_line_column() {
         let cases = [
             (
                 Location::from_line_col(LineCol { line: 2, column: 3 }, "src/main.fm"),
@@ -464,8 +523,8 @@ mod tests {
             ),
         ];
 
-        for (location, expected_string) in cases {
-            assert_eq!(format!("{location}"), expected_string.to_string())
+        for (location, expected) in cases {
+            assert_eq!(format!("{location}"), expected.to_string())
         }
     }
 }
