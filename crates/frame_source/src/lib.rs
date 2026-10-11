@@ -86,7 +86,7 @@ impl SourceFile {
             .line_starts
             .get((line_index + 1) as usize)
             .copied()
-            .unwrap_or(usize_to_u32(self.text.len()));
+            .unwrap_or_else(|| usize_to_u32(self.text.len()));
 
         let line: &str = &self.text[line_start as usize..line_end as usize];
 
