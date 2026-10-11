@@ -281,20 +281,12 @@ impl Span {
 
 /// Returns the byte offset where each line starts: 0, then the offset after each `\n`.
 fn compute_line_starts(text: &str) -> Vec<u32> {
-    let mut bytes = text.as_bytes().iter().enumerate().peekable();
     let mut starts: Vec<u32> = vec![0];
 
-    while let Some((i, byte)) = bytes.next() {
-        let offset = usize_to_u32(i);
-
-        match byte {
-            b'\n' => starts.push(offset + 1),
-            b'\r' if bytes.peek().is_some() && *bytes.peek().unwrap().1 == b'\n' => {
-                starts.push(offset + 2);
-                bytes.next();
-            }
-            _ => {}
-        };
+    for (i, byte) in text.as_bytes().iter().enumerate() {
+        if *byte == b'\n' {
+            starts.push(usize_to_u32(i) + 1);
+        }
     }
 
     starts
