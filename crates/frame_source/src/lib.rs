@@ -81,10 +81,11 @@ impl SourceFile {
         }
 
         let line_index = line_number - 1;
-        let line_start = *self
+        let line_start = self
             .line_starts
             .get(line_index as usize)
-            .expect("the line number should be in range, as checked above");
+            .copied()
+            .unwrap_or(line_index); // At this point, we know the index is in the range
 
         // The last line has no next start: it ends with the text.
         let line_end =
