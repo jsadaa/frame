@@ -188,23 +188,22 @@ impl SourceMap {
     ///
     /// Panics if the text is longer than `u32::MAX` bytes, the limit of the offsets.
     pub fn add(&mut self, name: String, text: String) -> FileId {
-        if text.len() <= u32::MAX as usize {
-            let line_starts = compute_line_starts(&text);
-            let id = FileId(usize_to_u32(self.files.len()));
-
-            self.files.push(SourceFile {
-                name,
-                text,
-                line_starts,
-            });
-
-            return id;
-        }
-
-        panic!(
+        assert!(
+            text.len() < u32::MAX as usize,
             "the text of '{name}' is too long for 32-bit offsets: {} bytes",
-            text.len()
+            text.len(),
         );
+
+        let line_starts = compute_line_starts(&text);
+        let id = FileId(usize_to_u32(self.files.len()));
+
+        self.files.push(SourceFile {
+            name,
+            text,
+            line_starts,
+        });
+
+        id
     }
 
     /// Returns the file of `id`.
