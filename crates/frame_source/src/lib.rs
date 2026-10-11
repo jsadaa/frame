@@ -166,7 +166,7 @@ pub struct SourceMap {
 impl SourceMap {
     /// Creates an empty source map.
     pub fn new() -> Self {
-        SourceMap { files: vec![] }
+        Self::default()
     }
 
     /// Adds a file, and returns its id. The starts of its lines are computed here, once.
