@@ -425,6 +425,7 @@ mod tests {
         let file = file_of("ab\n");
         assert_line_col(&file, 3, LineCol { line: 2, column: 1 });
         assert_line_text(&file, 1, "ab");
+        assert_line_text(&file, 2, "");
         assert_line_count(&file, 2);
     }
 
@@ -439,9 +440,20 @@ mod tests {
     #[test]
     fn added_files_get_distinct_ids() {
         let mut source_map = SourceMap::new();
-        let id_a = source_map.add("a.fm".to_string(), "".to_string());
-        let id_b = source_map.add("b.fm".to_string(), "".to_string());
+        let id_a = source_map.add("a.fm".to_string(), "ab".to_string());
+        let id_b = source_map.add("b.fm".to_string(), "cd".to_string());
+        let file_a = source_map.file(id_a);
+        let file_b = source_map.file(id_b);
+
         assert_ne!(id_a, id_b);
+
+        assert_eq!(file_a.name(), "a.fm",);
+        assert_eq!(file_a.text(), "ab",);
+        assert_eq!(file_a.line_count(), 1);
+
+        assert_eq!(file_b.name(), "b.fm",);
+        assert_eq!(file_b.text(), "cd",);
+        assert_eq!(file_b.line_count(), 1);
     }
 
     #[test]
