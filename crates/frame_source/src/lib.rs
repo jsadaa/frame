@@ -41,7 +41,7 @@ impl SourceFile {
     pub fn line_col(&self, offset: u32) -> LineCol {
         assert!(
             offset as usize <= self.text().len(),
-            "offset {offset} is out of range, the text length is {}",
+            "offset {offset} is out of range: the text length is {}",
             self.text.len()
         );
         assert!(
@@ -123,12 +123,12 @@ pub struct LineCol {
 }
 
 impl LineCol {
-    /// Returns the line, counted from 1
+    /// Returns the line, counted from 1.
     pub fn line(&self) -> u32 {
         self.line
     }
 
-    /// Return the column, counted from 1
+    /// Returns the column, counted from 1.
     pub fn column(&self) -> u32 {
         self.column
     }
@@ -185,7 +185,8 @@ impl SourceMap {
     ///
     /// # Panics
     ///
-    /// Panics if the text is longer than `u32::MAX` bytes, the limit of the offsets.
+    /// Panics if the text has `u32::MAX` bytes or more: its offsets, and the column of its
+    /// end, must fit in a `u32`.
     pub fn add(&mut self, name: String, text: String) -> FileId {
         assert!(
             text.len() < u32::MAX as usize,
@@ -233,9 +234,9 @@ impl Span {
     ///
     /// # Panics
     ///
-    /// Panics if `start` greater than `end`
+    /// Panics if `start` is after `end`.
     pub fn new(file: FileId, start: u32, end: u32) -> Self {
-        assert!(end >= start, "start {start} comes after the end {end}");
+        assert!(end >= start, "span start {start} is after its end {end}");
         Self { file, start, end }
     }
 
@@ -267,17 +268,17 @@ impl Span {
         }
     }
 
-    /// Returns the file id
+    /// Returns the file.
     pub fn file(&self) -> FileId {
         self.file
     }
 
-    /// Returns the start offset
+    /// Returns the offset of the start, included.
     pub fn start(&self) -> u32 {
         self.start
     }
 
-    /// Returns the end offset
+    /// Returns the offset of the end, excluded.
     pub fn end(&self) -> u32 {
         self.end
     }
@@ -327,7 +328,7 @@ mod tests {
 
     /// Counts the line and the column of `offset` character by character, from the start
     /// of the text: slow, but obviously right.
-    fn naive_line_col(text: &str, offset: usize) -> (u32, u32) {
+    fn naive_line_col(text: &str, offset: usize) -> LineCol {
         let mut line = 1;
         let mut column = 1;
         for (index, character) in text.char_indices() {
@@ -341,7 +342,7 @@ mod tests {
                 column += 1;
             }
         }
-        (line, column)
+        LineCol { line, column }
     }
 
     #[test]
@@ -417,7 +418,7 @@ mod tests {
     }
 
     #[test]
-    fn end_of_text_after_a_newline_starts_a_line() {
+    fn end_of_text_after_a_newline_starts_an_empty_line() {
         let file = file_of("ab\n");
         assert_line_col(&file, 3, LineCol { line: 2, column: 1 });
         assert_line_text(&file, 1, "ab");
@@ -438,18 +439,22 @@ mod tests {
         let mut source_map = SourceMap::new();
         let id_a = source_map.add("a.fm".to_string(), "ab".to_string());
         let id_b = source_map.add("b.fm".to_string(), "cd".to_string());
-        let file_a = source_map.file(id_a);
-        let file_b = source_map.file(id_b);
-
         assert_ne!(id_a, id_b);
+    }
 
-        assert_eq!(file_a.name(), "a.fm",);
-        assert_eq!(file_a.text(), "ab",);
-        assert_eq!(file_a.line_count(), 1);
+    #[test]
+    fn file_returns_the_name_and_text_added_with_its_id() {
+        let mut source_map = SourceMap::new();
+        let id_a = source_map.add("a.fm".to_string(), "ab".to_string());
+        let id_b = source_map.add("b.fm".to_string(), "cd".to_string());
 
-        assert_eq!(file_b.name(), "b.fm",);
-        assert_eq!(file_b.text(), "cd",);
-        assert_eq!(file_b.line_count(), 1);
+        let file_a = source_map.file(id_a);
+        assert_eq!(file_a.name(), "a.fm");
+        assert_eq!(file_a.text(), "ab");
+
+        let file_b = source_map.file(id_b);
+        assert_eq!(file_b.name(), "b.fm");
+        assert_eq!(file_b.text(), "cd");
     }
 
     #[test]
@@ -469,16 +474,12 @@ mod tests {
             let line_col = file.line_col(
                 u32::try_from(offset).expect("the offsets of the test text should fit in u32"),
             );
-            assert_eq!(
-                (line_col.line, line_col.column),
-                naive_line_col(text, offset),
-                "offset {offset}"
-            );
+            assert_eq!(line_col, naive_line_col(text, offset), "offset {offset}");
         }
     }
 
     #[test]
-    #[should_panic(expected = "offset 3 is out of range, the text length is 2")]
+    #[should_panic(expected = "offset 3 is out of range: the text length is 2")]
     fn line_col_panics_past_the_end_of_the_text() {
         let file = file_of("ab");
         assert_line_col(&file, 3, LineCol { line: 1, column: 1 });
@@ -519,8 +520,8 @@ mod tests {
     }
 
     #[test]
-    #[should_panic(expected = "start 5 comes after the end 2")]
-    fn new_span_panics_of_start_comes_after_end() {
+    #[should_panic(expected = "span start 5 is after its end 2")]
+    fn span_new_panics_if_start_is_after_end() {
         Span::new(FileId(1), 5, 2);
     }
 
@@ -568,7 +569,7 @@ mod tests {
         ];
 
         for (location, expected) in cases {
-            assert_eq!(format!("{location}"), expected.to_string())
+            assert_eq!(format!("{location}"), expected.to_string(), "{location:?}");
         }
     }
 }
