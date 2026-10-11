@@ -40,7 +40,7 @@ impl SourceFile {
     /// Panics if `offset` is past the end of the text, or inside a character.
     pub fn line_col(&self, offset: u32) -> LineCol {
         assert!(
-            offset as usize <= self.text().len(),
+            offset as usize <= self.text.len(),
             "offset {offset} is out of range: the text length is {}",
             self.text.len()
         );
