@@ -189,7 +189,7 @@ impl SourceMap {
         );
 
         let line_starts = compute_line_starts(&text);
-        let id = FileId(usize_to_u32(self.files.len()));
+        let id = FileId(u32::try_from(self.files.len()).expect("the id should fit in u32"));
 
         self.files.push(SourceFile {
             name,
