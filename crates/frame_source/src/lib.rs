@@ -39,6 +39,16 @@ impl SourceFile {
     ///
     /// Panics if `offset` is past the end of the text, or inside a character.
     pub fn line_col(&self, offset: u32) -> LineCol {
+        assert!(
+            offset as usize <= self.text().len(),
+            "offset {offset} is out of range, the text length is {}",
+            self.text.len()
+        );
+        assert!(
+            self.text.is_char_boundary(offset as usize),
+            "offset {offset} is not a char boundary",
+        );
+
         let line_index =
             usize_to_u32(self.line_starts.partition_point(|&start| start <= offset) - 1);
         let line_start = self.line_starts[line_index as usize];
@@ -438,16 +448,14 @@ mod tests {
     }
 
     #[test]
-    #[should_panic(expected = "end byte index 3 is out of bounds for string of length 2")]
+    #[should_panic(expected = "offset 3 is out of range, the text length is 2")]
     fn line_col_panics_past_the_end_of_the_text() {
         let file = file_of("ab");
         assert_line_col(&file, 3, "whatever");
     }
 
     #[test]
-    #[should_panic(
-        expected = "end byte index 1 is not a char boundary; it is inside 'é' (bytes 0..2 of string)"
-    )]
+    #[should_panic(expected = "offset 1 is not a char boundary")]
     fn line_col_panics_inside_a_character() {
         let file = file_of("é");
         assert_line_col(&file, 1, "whatever");
