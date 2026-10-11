@@ -189,6 +189,7 @@ impl SourceMap {
     pub fn add(&mut self, name: String, text: String) -> FileId {
         if text.len() <= u32::MAX as usize {
             let line_starts = compute_line_starts(&text);
+            let id = FileId(usize_to_u32(self.files.len()));
 
             self.files.push(SourceFile {
                 name,
@@ -196,7 +197,7 @@ impl SourceMap {
                 line_starts,
             });
 
-            return FileId(usize_to_u32(self.files.len()));
+            return id;
         }
 
         panic!(
@@ -211,8 +212,7 @@ impl SourceMap {
     ///
     /// Panics if no file of this source map has this `id`: it comes from another one.
     pub fn file(&self, id: FileId) -> &SourceFile {
-        let index = (id.0 - 1) as usize;
-        if let Some(file) = self.files.get(index) {
+        if let Some(file) = self.files.get(id.0 as usize) {
             return file;
         }
 
