@@ -73,12 +73,11 @@ impl SourceFile {
     ///
     /// Panics if the file has no line `line_number`.
     pub fn line_text(&self, line_number: u32) -> &str {
-        if line_number == 0 || self.line_count() < line_number {
-            panic!(
-                "line {line_number} is out of range: the line count is {}",
-                self.line_count()
-            );
-        }
+        assert!(
+            line_number > 0 && line_number <= self.line_count(),
+            "line {line_number} is out of range: the line count is {}",
+            self.line_count()
+        );
 
         let line_index = line_number - 1;
         let line_start = self
@@ -231,6 +230,10 @@ pub struct Span {
 
 impl Span {
     /// Creates the span of `start..end` in `file`.
+    ///
+    /// # Panics
+    ///
+    /// Panics if `start` greater than `end`
     pub fn new(file: FileId, start: u32, end: u32) -> Self {
         assert!(end >= start, "start {start} comes after the end {end}");
         Self { file, start, end }
@@ -252,9 +255,10 @@ impl Span {
     ///
     /// Panics if the two spans are in different files.
     pub fn cover(&self, other: &Span) -> Span {
-        if self.file != other.file {
-            panic!("cannot cover spans of two files: {self:?} and {other:?}")
-        }
+        assert!(
+            self.file == other.file,
+            "cannot cover spans of two files: {self:?} and {other:?}"
+        );
 
         Self {
             file: self.file,
