@@ -206,11 +206,11 @@ impl SourceMap {
     ///
     /// Panics if no file of this source map has this `id`: it comes from another one.
     pub fn file(&self, id: FileId) -> &SourceFile {
-        if let Some(file) = self.files.get(id.0 as usize) {
-            return file;
-        }
+        let Some(file) = self.files.get(id.0 as usize) else {
+            panic!("{id:?} is unknown to this source map");
+        };
 
-        panic!("{id:?} is unknown to this source map");
+        file
     }
 }
 
