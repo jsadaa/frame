@@ -317,12 +317,8 @@ mod tests {
         file.clone()
     }
 
-    fn assert_line_col(file: &SourceFile, offset: u32, expected: &str) {
-        assert_eq!(
-            format!("{}", file.line_col(offset)),
-            expected,
-            "offset {offset}"
-        );
+    fn assert_line_col(file: &SourceFile, offset: u32, expected: LineCol) {
+        assert_eq!(file.line_col(offset), expected, "offset {offset}");
     }
 
     fn assert_line_text(file: &SourceFile, line_number: u32, expected: &str) {
@@ -355,7 +351,7 @@ mod tests {
     #[test]
     fn start_of_text_is_line_1_column_1() {
         let file = file_of("abc");
-        assert_line_col(&file, 0, "1:1");
+        assert_line_col(&file, 0, LineCol { line: 1, column: 1 });
         assert_line_text(&file, 1, "abc");
         assert_line_count(&file, 1);
     }
@@ -363,7 +359,7 @@ mod tests {
     #[test]
     fn empty_text_has_one_empty_line() {
         let file = file_of("");
-        assert_line_col(&file, 0, "1:1");
+        assert_line_col(&file, 0, LineCol { line: 1, column: 1 });
         assert_line_text(&file, 1, "");
         assert_line_count(&file, 1);
     }
@@ -371,7 +367,7 @@ mod tests {
     #[test]
     fn newline_starts_the_next_line() {
         let file = file_of("ab\ncd");
-        assert_line_col(&file, 3, "2:1");
+        assert_line_col(&file, 3, LineCol { line: 2, column: 1 });
         assert_line_text(&file, 1, "ab");
         assert_line_count(&file, 2);
     }
@@ -379,7 +375,7 @@ mod tests {
     #[test]
     fn two_byte_character_is_one_column() {
         let file = file_of("let a = 1\nlet é = 2\n");
-        assert_line_col(&file, 17, "2:7");
+        assert_line_col(&file, 17, LineCol { line: 2, column: 7 });
         assert_line_text(&file, 2, "let é = 2");
         assert_line_count(&file, 3);
     }
@@ -387,7 +383,7 @@ mod tests {
     #[test]
     fn four_byte_character_is_one_column() {
         let file = file_of("a😀b");
-        assert_line_col(&file, 5, "1:3");
+        assert_line_col(&file, 5, LineCol { line: 1, column: 3 });
         assert_line_text(&file, 1, "a😀b");
         assert_line_count(&file, 1);
     }
@@ -395,7 +391,7 @@ mod tests {
     #[test]
     fn tab_is_one_column() {
         let file = file_of("\tx");
-        assert_line_col(&file, 1, "1:2");
+        assert_line_col(&file, 1, LineCol { line: 1, column: 2 });
         assert_line_text(&file, 1, "\tx");
         assert_line_count(&file, 1);
     }
@@ -403,7 +399,7 @@ mod tests {
     #[test]
     fn crlf_ends_a_line_without_its_cr() {
         let file = file_of("a\r\nb");
-        assert_line_col(&file, 3, "2:1");
+        assert_line_col(&file, 3, LineCol { line: 2, column: 1 });
         assert_line_text(&file, 1, "a");
         assert_line_count(&file, 2);
     }
@@ -411,7 +407,7 @@ mod tests {
     #[test]
     fn cr_of_a_crlf_stays_on_its_line() {
         let file = file_of("a\r\nb");
-        assert_line_col(&file, 1, "1:2");
+        assert_line_col(&file, 1, LineCol { line: 1, column: 2 });
         assert_line_text(&file, 2, "b");
         assert_line_count(&file, 2);
     }
@@ -419,7 +415,7 @@ mod tests {
     #[test]
     fn lone_cr_does_not_end_a_line() {
         let file = file_of("a\r");
-        assert_line_col(&file, 0, "1:1");
+        assert_line_col(&file, 0, LineCol { line: 1, column: 1 });
         assert_line_text(&file, 1, "a\r");
         assert_line_count(&file, 1);
     }
@@ -427,7 +423,7 @@ mod tests {
     #[test]
     fn end_of_text_after_a_newline_starts_a_line() {
         let file = file_of("ab\n");
-        assert_line_col(&file, 3, "2:1");
+        assert_line_col(&file, 3, LineCol { line: 2, column: 1 });
         assert_line_text(&file, 1, "ab");
         assert_line_count(&file, 2);
     }
@@ -435,7 +431,7 @@ mod tests {
     #[test]
     fn end_of_text_without_a_newline_follows_the_last_character() {
         let file = file_of("ab");
-        assert_line_col(&file, 2, "1:3");
+        assert_line_col(&file, 2, LineCol { line: 1, column: 3 });
         assert_line_text(&file, 1, "ab");
         assert_line_count(&file, 1);
     }
@@ -477,14 +473,14 @@ mod tests {
     #[should_panic(expected = "offset 3 is out of range, the text length is 2")]
     fn line_col_panics_past_the_end_of_the_text() {
         let file = file_of("ab");
-        assert_line_col(&file, 3, "whatever");
+        assert_line_col(&file, 3, LineCol { line: 1, column: 1 });
     }
 
     #[test]
     #[should_panic(expected = "offset 1 is not a char boundary")]
     fn line_col_panics_inside_a_character() {
         let file = file_of("é");
-        assert_line_col(&file, 1, "whatever");
+        assert_line_col(&file, 1, LineCol { line: 1, column: 1 });
     }
 
     #[test]
