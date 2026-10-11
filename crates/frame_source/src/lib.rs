@@ -143,7 +143,7 @@ pub struct Location {
 
 impl Location {
     /// Creates the location of `line_col` in the file named `name`.
-    pub fn from_line_col(line_col: LineCol, name: &str) -> Self {
+    pub fn new(name: &str, line_col: LineCol) -> Self {
         Self {
             name: name.to_string(),
             line_col,
@@ -554,16 +554,16 @@ mod tests {
     fn location_displays_path_line_column() {
         let cases = [
             (
-                Location::from_line_col(LineCol { line: 2, column: 3 }, "src/main.fm"),
+                Location::new("src/main.fm", LineCol { line: 2, column: 3 }),
                 "src/main.fm:2:3",
             ),
             (
-                Location::from_line_col(
+                Location::new(
+                    "lib.fm",
                     LineCol {
                         line: 1,
                         column: 10,
                     },
-                    "lib.fm",
                 ),
                 "lib.fm:1:10",
             ),
