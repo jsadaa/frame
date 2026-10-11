@@ -232,6 +232,7 @@ pub struct Span {
 impl Span {
     /// Creates the span of `start..end` in `file`.
     pub fn new(file: FileId, start: u32, end: u32) -> Self {
+        assert!(end >= start, "start {start} comes after the end {end}");
         Self { file, start, end }
     }
 
@@ -511,6 +512,12 @@ mod tests {
             assert_eq!(span.len(), expected_len, "{span:?}");
             assert_eq!(span.is_empty(), expected_is_empty, "{span:?}");
         }
+    }
+
+    #[test]
+    #[should_panic(expected = "start 5 comes after the end 2")]
+    fn new_span_panics_of_start_comes_after_end() {
+        Span::new(FileId(1), 5, 2);
     }
 
     #[test]
