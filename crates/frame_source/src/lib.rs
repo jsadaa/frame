@@ -159,11 +159,7 @@ impl Location {
 
 impl fmt::Display for Location {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(
-            f,
-            "{}:{}:{}",
-            self.name, self.line_col.line, self.line_col.column
-        )
+        write!(f, "{}:{}", self.name, self.line_col)
     }
 }
 
