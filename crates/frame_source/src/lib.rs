@@ -183,7 +183,9 @@ impl SourceMap {
         );
 
         let line_starts = compute_line_starts(&text);
-        let id = FileId(u32::try_from(self.files.len()).expect("the id should fit in u32"));
+        let id = FileId(
+            u32::try_from(self.files.len()).expect("a compilation has far fewer than 2^32 files"),
+        );
 
         self.files.push(SourceFile {
             name,
@@ -509,7 +511,7 @@ mod tests {
 
     #[test]
     #[should_panic(expected = "FileId(1) is unknown to this source map")]
-    fn add_panics_with_an_unkown_file_id() {
+    fn file_panics_on_an_unknown_id() {
         let source_map = SourceMap::new();
         source_map.file(FileId(1));
     }
