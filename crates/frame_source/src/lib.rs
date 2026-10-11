@@ -476,28 +476,28 @@ mod tests {
     #[should_panic(expected = "offset 3 is out of range: the text length is 2")]
     fn line_col_panics_past_the_end_of_the_text() {
         let file = file_of("ab");
-        assert_line_col(&file, 3, LineCol { line: 1, column: 1 });
+        file.line_col(3);
     }
 
     #[test]
     #[should_panic(expected = "offset 1 is not a char boundary")]
     fn line_col_panics_inside_a_character() {
         let file = file_of("é");
-        assert_line_col(&file, 1, LineCol { line: 1, column: 1 });
+        file.line_col(1);
     }
 
     #[test]
     #[should_panic(expected = "line 0 is out of range: the line count is 1")]
     fn line_text_panics_on_line_0() {
         let file = file_of("ab");
-        assert_line_text(&file, 0, "whatever");
+        file.line_text(0);
     }
 
     #[test]
     #[should_panic(expected = "line 2 is out of range: the line count is 1")]
     fn line_text_panics_past_the_last_line() {
         let file = file_of("ab");
-        assert_line_text(&file, 2, "whatever");
+        file.line_text(2);
     }
 
     #[test]
