@@ -49,9 +49,8 @@ impl SourceFile {
             "offset {offset} is not a char boundary",
         );
 
-        let line_index =
-            usize_to_u32(self.line_starts.partition_point(|&start| start <= offset) - 1);
-        let line_start = self.line_starts[line_index as usize];
+        let line_index = self.line_starts.partition_point(|&start| start <= offset) - 1;
+        let line_start = self.line_starts[line_index];
 
         let column = usize_to_u32(
             self.text[line_start as usize..offset as usize]
@@ -61,7 +60,7 @@ impl SourceFile {
         );
 
         LineCol {
-            line: line_index + 1,
+            line: usize_to_u32(line_index + 1),
             column,
         }
     }
