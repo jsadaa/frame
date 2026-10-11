@@ -121,6 +121,18 @@ pub struct LineCol {
     column: u32,
 }
 
+impl LineCol {
+    /// Returns the line, counted from 1
+    pub fn line(&self) -> u32 {
+        self.line
+    }
+
+    /// Return the column, counted from 1
+    pub fn column(&self) -> u32 {
+        self.column
+    }
+}
+
 impl fmt::Display for LineCol {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         write!(f, "{}:{}", self.line, self.column)
@@ -250,6 +262,21 @@ impl Span {
             start: self.start.min(other.start),
             end: self.end.max(other.end),
         }
+    }
+
+    /// Returns the file id
+    pub fn file(&self) -> FileId {
+        self.file
+    }
+
+    /// Returns the start offset
+    pub fn start(&self) -> u32 {
+        self.start
+    }
+
+    /// Returns the end offset
+    pub fn end(&self) -> u32 {
+        self.end
     }
 }
 
