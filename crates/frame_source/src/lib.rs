@@ -158,15 +158,9 @@ impl fmt::Display for Location {
 }
 
 /// The source files of a compilation, each designated by its [`FileId`].
-#[derive(Debug)]
+#[derive(Debug, Default)]
 pub struct SourceMap {
     files: Vec<SourceFile>,
-}
-
-impl Default for SourceMap {
-    fn default() -> Self {
-        SourceMap::new()
-    }
 }
 
 impl SourceMap {
