@@ -116,6 +116,7 @@ impl SourceFile {
 
 /// A line and a column, both counted from 1; the column counts characters, a tab as one
 /// (DIA-5).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct LineCol {
     line: u32,
     column: u32,
@@ -140,6 +141,7 @@ impl fmt::Display for LineCol {
 }
 
 /// A position as diagnostics show it: `path:line:column` (DIA-5).
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Location {
     name: String,
     line_col: LineCol,
@@ -224,7 +226,7 @@ impl SourceMap {
 
 /// A piece of the text of a file, between two byte offsets: `start` is included, `end`
 /// excluded.
-#[derive(Debug, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct Span {
     file: FileId,
     start: u32,
