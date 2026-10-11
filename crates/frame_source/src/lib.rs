@@ -514,6 +514,13 @@ mod tests {
     }
 
     #[test]
+    #[should_panic(expected = "FileId(1) is unknown to this source map")]
+    fn add_panics_with_an_unkown_file_id() {
+        let source_map = SourceMap::new();
+        source_map.file(FileId(1));
+    }
+
+    #[test]
     #[should_panic(expected = "span start 5 is after its end 2")]
     fn span_new_panics_if_start_is_after_end() {
         Span::new(FileId(1), 5, 2);
