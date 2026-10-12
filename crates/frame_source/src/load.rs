@@ -87,7 +87,7 @@ fn load_file_with_limit(
     if buf.len() as u64 > limit {
         // A file which is too large goes to the source map with empty content for diagnostics
         return Err(LoadError::TooLarge {
-            file: source_map.add(name.to_string(), "".to_string()),
+            file: source_map.add(name.to_string(), String::new()),
             limit,
         });
     }
