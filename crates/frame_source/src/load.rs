@@ -61,6 +61,10 @@ impl Display for LoadError {
 impl Error for LoadError {}
 
 /// Load a file into the source map and get its id
+///
+/// # Errors
+///
+/// Returns a [`LoadError`] if the file is invalid, too large, or the system can't handle or read it
 pub fn load_file(source_map: &mut SourceMap, path: &Path, name: &str) -> Result<FileId, LoadError> {
     // Use a proxy to mock the limit in the tests
     load_file_with_limit(source_map, path, name, MAX_SOURCE_SIZE)
