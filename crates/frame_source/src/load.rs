@@ -64,7 +64,8 @@ impl Error for LoadError {}
 ///
 /// # Errors
 ///
-/// Returns a [`LoadError`] if the file is invalid, too large, or the system can't handle or read it
+/// Returns a [`LoadError`] if the file is invalid, too large, or the system can't handle or read it.
+/// An invalid or too large file still goes into the source map for diagnostics
 pub fn load_file(source_map: &mut SourceMap, path: &Path, name: &str) -> Result<FileId, LoadError> {
     // Use a proxy to mock the limit in the tests
     load_file_with_limit(source_map, path, name, MAX_SOURCE_SIZE)
@@ -82,6 +83,7 @@ fn load_file_with_limit(
     })?;
 
     let mut buf = Vec::new();
+    // take only the `limit` offset and add 1 to check the size, which saves us to load the entire file into memory.
     let _handle = file.take(limit + 1).read(&mut buf)?;
 
     if buf.len() as u64 > limit {
@@ -94,17 +96,22 @@ fn load_file_with_limit(
 
     decode(&buf)
         .map(|text| source_map.add(name.to_string(), text))
-        .map_err(|(first_invalid_byte, invalid_text)| {
+        .map_err(|(first_invalid_byte, lossy_text)| {
             LoadError::InvalidUtf8(Span {
                 // An invalid utf-8 file goes into the source map for diagnostics
-                file: source_map.add(name.to_string(), invalid_text),
+                file: source_map.add(name.to_string(), lossy_text),
                 start: first_invalid_byte,
                 end: u32::try_from('\u{FFFD}'.len_utf8()).expect("\u{FFFD} size fits in a u32"),
             })
         })
 }
 
-/// Decode the file bytes into an UTF-8 string or return the index of the first invalid bytes and the lossy version of the text with invalid characters replaced by U+FFFD
+/// Decode the file bytes into an UTF-8 string
+///
+/// # Errors
+///
+/// If the bytes are invalid, returns the index of the first invalid byte and the lossy version of the text,
+/// with invalid characters replaced by U+FFFD
 fn decode(buf: &[u8]) -> Result<String, (u32, String)> {
     // Remove bytes order mark if present. If some appears in the middle of the text, the lexer will refuse it later
     let bytes = if buf.starts_with(&[0xEF, 0xBB, 0xBF]) {
@@ -116,7 +123,7 @@ fn decode(buf: &[u8]) -> Result<String, (u32, String)> {
     String::from_utf8(bytes).map_err(|e| {
         (
             u32::try_from(e.utf8_error().valid_up_to()).expect(
-                "at this point, the file size verification ensures an offset inside fits in a u32",
+                "at this point, the file size verification made in load_file() ensures an offset inside fits in a u32",
             ),
             String::from_utf8_lossy(&e.into_bytes()).into_owned(),
         )
