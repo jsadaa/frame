@@ -4,6 +4,9 @@
 //! offsets. Lines and columns ([`LineCol`]) are computed from an offset, by the
 //! [`SourceFile`], only to show a position (DIA-5).
 
+mod load;
+
+pub use load::*;
 use std::fmt;
 
 /// The id of a file in a [`SourceMap`]; only [`SourceMap::add`] makes one.
