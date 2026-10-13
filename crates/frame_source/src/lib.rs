@@ -11,7 +11,7 @@ use std::fmt;
 
 /// The id of a file in a [`SourceMap`]; only [`SourceMap::add`] makes one.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
-pub struct FileId(u32);
+pub struct FileId(pub u32);
 
 /// A file of a [`SourceMap`]: its name, its text, and where its lines start.
 #[derive(Debug, Clone)]
