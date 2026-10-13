@@ -1,8 +1,8 @@
 //! Source files, and positions in their text.
 //!
-//! A [`SourceMap`] holds the files; a [`Span`] designates a piece of a file's text by byte
-//! offsets. Lines and columns ([`LineCol`]) are computed from an offset, by the
-//! [`SourceFile`], only to show a position (DIA-5).
+//! A [`SourceMap`] holds the files, which [`load_file`] reads from the disk; a [`Span`]
+//! designates a piece of a file's text by byte offsets. Lines and columns ([`LineCol`]) are
+//! computed from an offset, by the [`SourceFile`], only to show a position (DIA-5).
 
 mod load;
 

@@ -1,4 +1,4 @@
-//! The load module integration tests.
+//! Loading files through the public interface of `frame_source`.
 
 use std::{
     fs,
@@ -7,13 +7,13 @@ use std::{
 
 use frame_source::{FileId, LoadError, SourceMap, load_file};
 
-fn path_of(name: &str) -> PathBuf {
+fn fixture_path(name: &str) -> PathBuf {
     Path::new(env!("CARGO_MANIFEST_DIR")).join(format!("tests/fixtures/{}", name))
 }
 
 #[test]
-fn valid() {
-    let path = path_of("valid.fm");
+fn loads_a_valid_file() {
+    let path = fixture_path("valid.fm");
     let name = "valid.fm";
     let mut source_map = SourceMap::new();
     let id = load_file(&mut source_map, &path, name).unwrap();
@@ -24,8 +24,8 @@ fn valid() {
 }
 
 #[test]
-fn with_bom() {
-    let path = path_of("bom.fm");
+fn removes_the_bom() {
+    let path = fixture_path("bom.fm");
     let name = "bom.fm";
     let mut source_map = SourceMap::new();
     let id = load_file(&mut source_map, &path, name).unwrap();
@@ -39,13 +39,14 @@ fn with_bom() {
 }
 
 #[test]
-fn invalid() {
-    let path = path_of("invalid.fm");
+fn locates_the_first_invalid_byte() {
+    let path = fixture_path("invalid.fm");
     let name = "invalid.fm";
     let mut source_map = SourceMap::new();
 
-    let Err(LoadError::InvalidUtf8(span)) = load_file(&mut source_map, &path, name) else {
-        panic!("the result should be a LoadError::InvalidUtf8")
+    let result = load_file(&mut source_map, &path, name);
+    let Err(LoadError::InvalidUtf8(span)) = result else {
+        panic!("expected an InvalidUtf8 error, got {result:?}")
     };
 
     let file = source_map.file(FileId(0));
@@ -59,27 +60,35 @@ fn invalid() {
 }
 
 #[test]
-fn missing() {
-    let p = path_of("missing.fm");
+fn missing_file_is_a_read_error() {
+    let path = fixture_path("missing.fm");
     let mut source_map = SourceMap::new();
-    let Err(LoadError::Read { path, system_error }) = load_file(&mut source_map, &p, "missing.fm")
+    let result = load_file(&mut source_map, &path, "missing.fm");
+    let Err(LoadError::Read {
+        path: error_path,
+        system_error,
+    }) = result
     else {
-        panic!("the result should be a LoadError::Read")
+        panic!("expected a Read error, got {result:?}")
     };
 
-    assert_eq!(p, path);
+    assert_eq!(path, error_path);
     assert_eq!(system_error, "No such file or directory (os error 2)");
 }
 
 #[test]
-fn directory() {
-    let p = Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures");
+fn directory_is_a_read_error() {
+    let path = Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures");
     let mut source_map = SourceMap::new();
-    let Err(LoadError::Read { path, system_error }) = load_file(&mut source_map, &p, "missing.fm")
+    let result = load_file(&mut source_map, &path, "fixtures");
+    let Err(LoadError::Read {
+        path: error_path,
+        system_error,
+    }) = result
     else {
-        panic!("the result should be a LoadError::Read")
+        panic!("expected a Read error, got {result:?}")
     };
 
-    assert_eq!(p, path);
+    assert_eq!(path, error_path);
     assert_eq!(system_error, "Is a directory (os error 21)");
 }

@@ -1,29 +1,33 @@
-//! Validate and load a source file into the source map
+//! Loading a source file: read from the disk, checked as UTF-8 (LEX-1) and against the
+//! size limit (CNF-6), then added to a [`SourceMap`].
 
 use std::{error::Error, fmt::Display, fs::File, io::Read, path::Path};
 
 use super::{FileId, SourceMap, Span};
 
-/// The maximum size allowed for a frame source file
+/// The size limit of a source file, in bytes: 16 MiB, the least that CNF-6 lets an
+/// implementation accept.
 pub const MAX_SOURCE_SIZE: u64 = 16 * 1024 * 1024;
 
+/// Why a source file could not be loaded.
 #[derive(Debug)]
-/// A file that doesn't follow LEX-1 or CNF-6, or that system failed to read or handle
 pub enum LoadError {
-    /// The system failed to open the file at the given path
+    /// The system could not open or read the file. It is not added to the source map.
     Read {
-        /// The path of the file
+        /// The path, as given to [`load_file`].
         path: String,
-        /// The original system error text
+        /// The message of the system error.
         system_error: String,
     },
-    /// The file contains at least one invalid utf-8 char, the span holds its position
+    /// The file is not valid UTF-8 (LEX-1). It is added with each invalid sequence replaced
+    /// by U+FFFD; the span covers the first one.
     InvalidUtf8(Span),
-    /// The file is too large and exceeds [`MAX_SOURCE_SIZE`]
+    /// The file is larger than the limit (CNF-6). It is added with an empty text, so that a
+    /// diagnostic can name it.
     TooLarge {
-        /// The file id
+        /// The id of the file added.
         file: FileId,
-        /// The limit
+        /// The limit, in bytes.
         limit: u64,
     },
 }
@@ -45,77 +49,76 @@ impl Display for LoadError {
 
 impl Error for LoadError {}
 
-/// Load a file into the source map and get its id
+/// Reads the file at `path`, adds it to `source_map` under `name`, and returns its id. A
+/// leading byte order mark is removed (LEX-1).
 ///
 /// # Errors
 ///
-/// Returns a [`LoadError`] if the file is invalid, too large, or the system can't handle or read it.
-/// An invalid or too large file still goes into the source map for diagnostics
+/// Returns a [`LoadError`] if the file cannot be read, is not valid UTF-8, or is larger than
+/// [`MAX_SOURCE_SIZE`]. In the last two cases, the file is added anyway, for the diagnostic.
 pub fn load_file(source_map: &mut SourceMap, path: &Path, name: &str) -> Result<FileId, LoadError> {
-    // Use a proxy to mock the limit in the tests
     load_file_with_limit(source_map, path, name, MAX_SOURCE_SIZE)
 }
 
+/// [`load_file`], with the size limit as a parameter, so that tests can use a few bytes.
 fn load_file_with_limit(
     source_map: &mut SourceMap,
     path: &Path,
     name: &str,
     limit: u64,
 ) -> Result<FileId, LoadError> {
-    let file = File::open(path).map_err(|e| LoadError::Read {
+    let file = File::open(path).map_err(|error| LoadError::Read {
         path: path.to_string_lossy().to_string(),
-        system_error: e.to_string(),
+        system_error: error.to_string(),
     })?;
 
-    let mut buf = Vec::new();
-    // take only the `limit` offset and add 1 to check the size (if the resulting buffer is greater, the file is too large),
-    // which saves us to load the entire file into memory.
+    let mut bytes = Vec::new();
+    // One byte past the limit tells a file at the limit from a larger one, without reading
+    // the larger one whole.
     let _ = file
         .take(limit + 1)
-        .read_to_end(&mut buf)
-        .map_err(|e| LoadError::Read {
+        .read_to_end(&mut bytes)
+        .map_err(|error| LoadError::Read {
             path: path.to_string_lossy().to_string(),
-            system_error: e.to_string(),
+            system_error: error.to_string(),
         })?;
 
-    if buf.len() as u64 > limit {
-        // A file which is too large goes to the source map with empty content for diagnostics
+    if bytes.len() as u64 > limit {
         return Err(LoadError::TooLarge {
             file: source_map.add(name.to_string(), String::new()),
             limit,
         });
     }
 
-    decode(&mut buf)
+    decode(&mut bytes)
         .map(|text| source_map.add(name.to_string(), text))
-        .map_err(|(first_invalid_byte, lossy_text)| {
+        .map_err(|(invalid_offset, lossy_text)| {
             LoadError::InvalidUtf8(Span::new(
                 source_map.add(name.to_string(), lossy_text),
-                first_invalid_byte,
-                first_invalid_byte
-                    + u32::try_from('\u{FFFD}'.len_utf8()).expect("\u{FFFD} size fits in a u32"),
+                invalid_offset,
+                invalid_offset
+                    + u32::try_from('\u{FFFD}'.len_utf8()).expect("U+FFFD takes 3 bytes"),
             ))
         })
 }
 
-/// Decode the file bytes into an UTF-8 string, removing the BOM if present at the start of the text
+/// Decodes `bytes` as UTF-8, without a leading byte order mark (LEX-1).
 ///
 /// # Errors
 ///
-/// If the bytes are invalid, returns the index of the first invalid byte and the lossy version of the text,
-/// with invalid characters replaced by U+FFFD
-fn decode(buf: &mut Vec<u8>) -> Result<String, (u32, String)> {
-    // Remove BOM if present. If it appears in the middle of the text, the lexer will refuse it later
-    if buf.starts_with(&[0xEF, 0xBB, 0xBF]) {
-        buf.drain(..3);
+/// If the bytes are not valid UTF-8, returns the offset of the first invalid byte, counted
+/// without the mark, and the text with each invalid sequence replaced by U+FFFD.
+fn decode(bytes: &mut Vec<u8>) -> Result<String, (u32, String)> {
+    // A mark elsewhere stays: the lexer refuses it (LEX-2).
+    if bytes.starts_with(&[0xEF, 0xBB, 0xBF]) {
+        bytes.drain(..3);
     }
 
-    String::from_utf8(buf.clone()).map_err(|e| {
+    String::from_utf8(bytes.clone()).map_err(|error| {
         (
-            u32::try_from(e.utf8_error().valid_up_to()).expect(
-                "at this point, the file size verification made in load_file_with_limit() ensures an offset inside fits in a u32",
-            ),
-            String::from_utf8_lossy(&e.into_bytes()).into_owned(),
+            u32::try_from(error.utf8_error().valid_up_to())
+                .expect("the bytes are within the size limit, so their offsets fit in u32"),
+            String::from_utf8_lossy(&error.into_bytes()).into_owned(),
         )
     })
 }
@@ -130,12 +133,12 @@ mod tests {
         path::{Path, PathBuf},
     };
 
-    fn path_of(name: &str) -> PathBuf {
+    fn fixture_path(name: &str) -> PathBuf {
         Path::new(env!("CARGO_MANIFEST_DIR")).join(format!("tests/fixtures/{}", name))
     }
 
-    fn str_to_bytes(str: &str) -> Vec<u8> {
-        String::from(str).into_bytes()
+    fn str_to_bytes(text: &str) -> Vec<u8> {
+        String::from(text).into_bytes()
     }
 
     fn bytes_to_lossy_string(bytes: Vec<u8>) -> String {
@@ -143,7 +146,7 @@ mod tests {
     }
 
     #[test]
-    fn ascii() {
+    fn decode_keeps_ascii_text() {
         assert_eq!(
             decode(&mut str_to_bytes("let x = 1")).unwrap(),
             String::from("let x = 1")
@@ -151,7 +154,7 @@ mod tests {
     }
 
     #[test]
-    fn many_bytes() {
+    fn decode_keeps_multibyte_characters() {
         assert_eq!(
             decode(&mut str_to_bytes("é€😀")).unwrap(),
             String::from("é€😀")
@@ -159,7 +162,7 @@ mod tests {
     }
 
     #[test]
-    fn bom_at_start() {
+    fn decode_removes_a_leading_bom() {
         assert_eq!(
             decode(&mut [0xEF, 0xBB, 0xBF, b'a'].to_vec()).unwrap(),
             String::from("a")
@@ -167,71 +170,71 @@ mod tests {
     }
 
     #[test]
-    fn continuation_byte_alone() {
-        let mut continuation_byte: Vec<u8> = [0x80].to_vec();
+    fn decode_rejects_a_lone_continuation_byte() {
+        let mut bytes: Vec<u8> = [0x80].to_vec();
         assert_eq!(
-            decode(&mut continuation_byte).unwrap_err(),
-            (0, bytes_to_lossy_string(continuation_byte))
+            decode(&mut bytes).unwrap_err(),
+            (0, bytes_to_lossy_string(bytes))
         );
     }
 
     #[test]
-    fn invalid_byte_in_the_middle() {
-        let mut text: Vec<u8> = [b'a', b'b', 0xFF, b'c'].to_vec();
+    fn decode_rejects_an_invalid_byte_in_the_middle() {
+        let mut bytes: Vec<u8> = [b'a', b'b', 0xFF, b'c'].to_vec();
         assert_eq!(
-            decode(&mut text).unwrap_err(),
-            (2, bytes_to_lossy_string(text))
+            decode(&mut bytes).unwrap_err(),
+            (2, bytes_to_lossy_string(bytes))
         );
     }
 
     #[test]
-    fn truncated_at_the_end() {
-        let mut text: Vec<u8> = [b'a', 0xC3].to_vec();
+    fn decode_rejects_a_sequence_truncated_at_the_end() {
+        let mut bytes: Vec<u8> = [b'a', 0xC3].to_vec();
         assert_eq!(
-            decode(&mut text).unwrap_err(),
-            (1, bytes_to_lossy_string(text))
+            decode(&mut bytes).unwrap_err(),
+            (1, bytes_to_lossy_string(bytes))
         );
     }
 
     #[test]
-    fn too_large_encoding() {
-        let mut text: Vec<u8> = [0xC0, 0x80].to_vec();
+    fn decode_rejects_an_overlong_encoding() {
+        let mut bytes: Vec<u8> = [0xC0, 0x80].to_vec();
         assert_eq!(
-            decode(&mut text).unwrap_err(),
-            (0, bytes_to_lossy_string(text))
+            decode(&mut bytes).unwrap_err(),
+            (0, bytes_to_lossy_string(bytes))
         );
     }
 
     #[test]
-    fn substitute() {
-        let mut text: Vec<u8> = [0xED, 0xA0, 0x80].to_vec();
+    fn decode_rejects_a_surrogate() {
+        let mut bytes: Vec<u8> = [0xED, 0xA0, 0x80].to_vec();
         assert_eq!(
-            decode(&mut text).unwrap_err(),
-            (0, bytes_to_lossy_string(text))
+            decode(&mut bytes).unwrap_err(),
+            (0, bytes_to_lossy_string(bytes))
         );
     }
 
     #[test]
-    fn beyond() {
-        let mut text: Vec<u8> = [0xF4, 0x90, 0x80, 0x80].to_vec();
+    fn decode_rejects_a_code_point_beyond_u10ffff() {
+        let mut bytes: Vec<u8> = [0xF4, 0x90, 0x80, 0x80].to_vec();
         assert_eq!(
-            decode(&mut text).unwrap_err(),
-            (0, bytes_to_lossy_string(text))
+            decode(&mut bytes).unwrap_err(),
+            (0, bytes_to_lossy_string(bytes))
         );
     }
 
     #[test]
-    fn bom_then_invalid_byte() {
-        let mut text: Vec<u8> = [0xEF, 0xBB, 0xBF, 0xFF].to_vec();
+    fn decode_counts_the_invalid_offset_without_the_bom() {
+        let mut bytes: Vec<u8> = [0xEF, 0xBB, 0xBF, 0xFF].to_vec();
         assert_eq!(
-            decode(&mut text).unwrap_err(),
-            (0, bytes_to_lossy_string(text))
+            decode(&mut bytes).unwrap_err(),
+            (0, bytes_to_lossy_string(bytes))
         );
     }
 
     #[test]
-    fn file_size_at_the_limit() {
-        let path = path_of("valid.fm");
+    fn load_accepts_a_file_at_the_limit() {
+        let path = fixture_path("valid.fm");
         let source_map = &mut SourceMap::new();
         let id = load_file_with_limit(source_map, &path, "valid.fm", 10).unwrap();
         let file = source_map.file(id);
@@ -240,12 +243,12 @@ mod tests {
     }
 
     #[test]
-    fn file_size_too_large() {
-        let path = path_of("valid.fm");
+    fn load_rejects_a_file_over_the_limit() {
+        let path = fixture_path("valid.fm");
         let source_map = &mut SourceMap::new();
-        let err = load_file_with_limit(source_map, &path, "valid.fm", 9);
-        let Err(LoadError::TooLarge { file, limit }) = err else {
-            panic!("the result should be a LoadError::TooLarge")
+        let result = load_file_with_limit(source_map, &path, "valid.fm", 9);
+        let Err(LoadError::TooLarge { file, limit }) = result else {
+            panic!("expected a TooLarge error, got {result:?}")
         };
 
         assert_eq!(file, FileId(0));
@@ -253,34 +256,34 @@ mod tests {
     }
 
     #[test]
-    fn read_error() {
-        let err = LoadError::Read {
+    fn read_error_displays_the_path_and_the_system_error() {
+        let error = LoadError::Read {
             path: String::from("src/a.fm"),
             system_error: String::from("a system error message"),
         };
         assert_eq!(
-            format!("{err}"),
+            format!("{error}"),
             String::from("cannot read src/a.fm: a system error message")
         )
     }
 
     #[test]
-    fn invalid_utf8_error() {
-        let err = LoadError::InvalidUtf8(Span::new(FileId(0), 4, 9));
+    fn invalid_utf8_error_displays_its_title() {
+        let error = LoadError::InvalidUtf8(Span::new(FileId(0), 4, 9));
         assert_eq!(
-            format!("{err}"),
+            format!("{error}"),
             String::from("source file is not valid UTF-8")
         )
     }
 
     #[test]
-    fn too_large_error() {
-        let err = LoadError::TooLarge {
+    fn too_large_error_displays_the_limit() {
+        let error = LoadError::TooLarge {
             file: FileId(0),
             limit: 10,
         };
         assert_eq!(
-            format!("{err}"),
+            format!("{error}"),
             String::from("source file FileId(0) is too large: the limit is 10 bytes")
         )
     }
