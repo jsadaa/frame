@@ -23,7 +23,7 @@ pub enum LoadError {
         /// The original system error text
         system_error: String,
     },
-    /// The file contains invalid utf-8 bytes, the span holds its position
+    /// The file contains at least one invalid utf-8 char, the span holds its position
     InvalidUtf8(Span),
     /// The file is too large and exceeds [`MAX_SOURCE_SIZE`]
     TooLarge {
