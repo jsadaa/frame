@@ -74,8 +74,15 @@ fn load_file_with_limit(
     })?;
 
     let mut buf = Vec::new();
-    // take only the `limit` offset and add 1 to check the size, which saves us to load the entire file into memory.
-    let _handle = file.take(limit + 1).read(&mut buf)?;
+    // take only the `limit` offset and add 1 to check the size (if the resulting buffer is greater, the file is too large),
+    // which saves us to load the entire file into memory.
+    let _ = file
+        .take(limit + 1)
+        .read_to_end(&mut buf)
+        .map_err(|e| LoadError::Read {
+            path: path.to_string_lossy().to_string(),
+            system_error: e.to_string(),
+        })?;
 
     if buf.len() as u64 > limit {
         // A file which is too large goes to the source map with empty content for diagnostics
