@@ -95,12 +95,12 @@ fn load_file_with_limit(
     decode(&buf)
         .map(|text| source_map.add(name.to_string(), text))
         .map_err(|(first_invalid_byte, lossy_text)| {
-            LoadError::InvalidUtf8(Span {
-                // An invalid utf-8 file goes into the source map for diagnostics
-                file: source_map.add(name.to_string(), lossy_text),
-                start: first_invalid_byte,
-                end: u32::try_from('\u{FFFD}'.len_utf8()).expect("\u{FFFD} size fits in a u32"),
-            })
+            LoadError::InvalidUtf8(Span::new(
+                source_map.add(name.to_string(), lossy_text),
+                first_invalid_byte,
+                first_invalid_byte
+                    + u32::try_from('\u{FFFD}'.len_utf8()).expect("\u{FFFD} size fits in a u32"),
+            ))
         })
 }
 
