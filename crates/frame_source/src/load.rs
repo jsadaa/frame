@@ -1,12 +1,6 @@
 //! Validate and load a source file into the source map
 
-use std::{
-    error::Error,
-    fmt::Display,
-    fs::File,
-    io::{self, Read},
-    path::Path,
-};
+use std::{error::Error, fmt::Display, fs::File, io::Read, path::Path};
 
 use super::{FileId, SourceMap, Span};
 
@@ -133,7 +127,6 @@ mod tests {
     use super::{FileId, LoadError, SourceMap, decode, load_file_with_limit};
     use std::{
         fs,
-        io::{self, ErrorKind},
         path::{Path, PathBuf},
     };
 
