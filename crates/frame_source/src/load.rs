@@ -92,7 +92,7 @@ fn load_file_with_limit(
         });
     }
 
-    decode(&buf)
+    decode(&mut buf)
         .map(|text| source_map.add(name.to_string(), text))
         .map_err(|(first_invalid_byte, lossy_text)| {
             LoadError::InvalidUtf8(Span::new(
@@ -104,24 +104,22 @@ fn load_file_with_limit(
         })
 }
 
-/// Decode the file bytes into an UTF-8 string
+/// Decode the file bytes into an UTF-8 string, removing the BOM if present at the start of the text
 ///
 /// # Errors
 ///
 /// If the bytes are invalid, returns the index of the first invalid byte and the lossy version of the text,
 /// with invalid characters replaced by U+FFFD
-fn decode(buf: &[u8]) -> Result<String, (u32, String)> {
-    // Remove bytes order mark if present. If some appears in the middle of the text, the lexer will refuse it later
-    let bytes = if buf.starts_with(&[0xEF, 0xBB, 0xBF]) {
-        buf.to_vec().drain(..3).collect()
-    } else {
-        buf.to_vec()
-    };
+fn decode(buf: &mut Vec<u8>) -> Result<String, (u32, String)> {
+    // Remove BOM if present. If it appears in the middle of the text, the lexer will refuse it later
+    if buf.starts_with(&[0xEF, 0xBB, 0xBF]) {
+        buf.drain(..3);
+    }
 
-    String::from_utf8(bytes).map_err(|e| {
+    String::from_utf8(buf.clone()).map_err(|e| {
         (
             u32::try_from(e.utf8_error().valid_up_to()).expect(
-                "at this point, the file size verification made in load_file() ensures an offset inside fits in a u32",
+                "at this point, the file size verification made in load_file_with_limit() ensures an offset inside fits in a u32",
             ),
             String::from_utf8_lossy(&e.into_bytes()).into_owned(),
         )
