@@ -32,14 +32,6 @@ pub enum LoadError {
         /// The limit
         limit: u64,
     },
-    /// An IO error occured while reading the file content
-    Io(io::Error),
-}
-
-impl From<io::Error> for LoadError {
-    fn from(error: io::Error) -> Self {
-        Self::Io(error)
-    }
 }
 
 impl Display for LoadError {
@@ -51,9 +43,8 @@ impl Display for LoadError {
             LoadError::InvalidUtf8(_) => write!(f, "source file is not valid UTF-8"),
             LoadError::TooLarge { file, limit } => write!(
                 f,
-                "`source file {file:?} is too large: the limit is {limit} bytes`"
+                "source file {file:?} is too large: the limit is {limit} bytes"
             ),
-            LoadError::Io(e) => write!(f, "io error: {e}"),
         }
     }
 }
