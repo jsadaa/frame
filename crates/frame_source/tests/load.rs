@@ -8,7 +8,7 @@ use std::{
 use frame_source::{LoadError, SourceMap, load_file};
 
 fn fixture_path(name: &str) -> PathBuf {
-    Path::new(env!("CARGO_MANIFEST_DIR")).join(format!("tests/fixtures/{}", name))
+    Path::new(env!("CARGO_MANIFEST_DIR")).join(format!("tests/fixtures/{name}"))
 }
 
 #[test]
@@ -74,6 +74,8 @@ fn missing_file_is_a_read_error() {
     assert_eq!(system_error.kind(), io::ErrorKind::NotFound);
 }
 
+// Under Unix, opening a directory succeeds, and reading it fails with this kind.
+#[cfg(unix)]
 #[test]
 fn directory_is_a_read_error() {
     let path = Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures");

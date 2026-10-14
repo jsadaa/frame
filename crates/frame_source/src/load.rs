@@ -26,9 +26,10 @@ pub enum LoadError {
         system_error: io::Error,
     },
     /// The file is not valid UTF-8 (LEX-1). It is added with each invalid sequence replaced
-    /// by U+FFFD;
+    /// by U+FFFD.
     InvalidUtf8 {
-        /// The span, which covers the first invalid sequence.
+        /// The span of the first U+FFFD in the text added; it starts at the first invalid
+        /// byte.
         span: Span,
     },
     /// The file is larger than the limit (CNF-6). It is added with an empty text, so that a
@@ -48,7 +49,7 @@ impl Display for LoadError {
                 write!(f, "cannot read '{}': {system_error}", path.display())
             }
             LoadError::InvalidUtf8 { .. } => write!(f, "source file is not valid UTF-8"),
-            LoadError::TooLarge { file: _, limit } => {
+            LoadError::TooLarge { limit, .. } => {
                 write!(f, "source file is too large: the limit is {limit} bytes")
             }
         }
@@ -156,7 +157,7 @@ mod tests {
     };
 
     fn fixture_path(name: &str) -> PathBuf {
-        Path::new(env!("CARGO_MANIFEST_DIR")).join(format!("tests/fixtures/{}", name))
+        Path::new(env!("CARGO_MANIFEST_DIR")).join(format!("tests/fixtures/{name}"))
     }
 
     fn str_to_bytes(text: &str) -> Vec<u8> {
@@ -198,10 +199,7 @@ mod tests {
 
     #[test]
     fn decode_removes_a_bom_alone() {
-        assert_eq!(
-            decode([0xEF, 0xBB, 0xBF].to_vec()).unwrap(),
-            String::from("")
-        )
+        assert_eq!(decode([0xEF, 0xBB, 0xBF].to_vec()).unwrap(), String::new())
     }
 
     #[test]
