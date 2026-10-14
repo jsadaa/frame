@@ -9,7 +9,7 @@ use std::{
     path::{Path, PathBuf},
 };
 
-use super::{FileId, SourceMap, Span};
+use super::{FileId, SourceMap, Span, usize_to_u32};
 
 /// The size limit of a source file, in bytes: 16 MiB, the least that CNF-6 lets an
 /// implementation accept.
@@ -91,21 +91,12 @@ fn load_file_with_limit(
     match decode(bytes) {
         Ok(text) => Ok(source_map.add(name.to_string(), text)),
         Err((invalid_offset, lossy_text)) => {
-            let invalid_offset = usize_to_u32(
-                invalid_offset,
-                "the bytes are within the size limit, so their offsets fit in u32",
-            );
+            let end = invalid_offset + char::REPLACEMENT_CHARACTER.len_utf8();
+            let file = source_map.add(name.to_string(), lossy_text);
 
+            // The span lies in the text just added, whose offsets `add` checked.
             Err(LoadError::InvalidUtf8 {
-                span: Span::new(
-                    source_map.add(name.to_string(), lossy_text),
-                    invalid_offset,
-                    invalid_offset
-                        + usize_to_u32(
-                            char::REPLACEMENT_CHARACTER.len_utf8(),
-                            "U+FFFD takes 3 bytes",
-                        ),
-                ),
+                span: Span::new(file, usize_to_u32(invalid_offset), usize_to_u32(end)),
             })
         }
     }
@@ -140,10 +131,6 @@ fn decode(mut bytes: Vec<u8>) -> Result<String, (usize, String)> {
             String::from_utf8_lossy(&error.into_bytes()).into_owned(),
         )
     })
-}
-
-fn usize_to_u32(num: usize, message: &str) -> u32 {
-    u32::try_from(num).expect(message)
 }
 
 #[cfg(test)]
