@@ -13,22 +13,16 @@ One writes the logic: values, decisions, rules. The rest is up to execution.
 
 The language is in an early stage of development.
 
-## Usage
+The documentation of the language, its design and its specification, is not included at this stage: like the project, it is experimental, and will change as the implementation progresses.
+
+## Building
 
 ```bash
-# Build the project
 cargo build --release
+target/release/frame --help
 ```
 
-```bash
-# Run the project
-cargo run --release
-```
-
-```bash
-# Run the tests
-cargo test --workspace
-```
+The commands are listed by `frame --help`; none is implemented yet.
 
 ## Development
 
@@ -50,7 +44,14 @@ The CI runs the same script on every push.
 
 Frame is organized as a Cargo workspace with the following crates:
 
-- **frame**: the main crate, handling the cli
+- **frame**: the command-line tool
+- **frame_source**: source files, positions in their text, and loading a file from disk
+
+## Use of AI
+
+The implementation is written by hand: I write its logic myself, and I review every change before committing it.
+
+I use AI for research and understanding, for assistance with specification, for planning and breaking the work into tickets, for code reviews, and for learning. On request, it also makes small edits: names, documentation, messages.
 
 ## License
 
