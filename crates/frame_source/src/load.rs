@@ -72,21 +72,10 @@ fn load_file_with_limit(
     name: &str,
     limit: u64,
 ) -> Result<FileId, LoadError> {
-    let file = File::open(path).map_err(|error| LoadError::Read {
+    let bytes = read(path, limit).map_err(|error| LoadError::Read {
         path: path.to_path_buf(),
         system_error: error,
     })?;
-
-    let mut bytes = Vec::new();
-    // One byte past the limit tells a file at the limit from a larger one, without reading
-    // the larger one whole.
-    let _ = file
-        .take(limit + 1)
-        .read_to_end(&mut bytes)
-        .map_err(|error| LoadError::Read {
-            path: path.to_path_buf(),
-            system_error: error,
-        })?;
 
     if bytes.len() as u64 > limit {
         return Err(LoadError::TooLarge {
@@ -95,16 +84,24 @@ fn load_file_with_limit(
         });
     }
 
-    decode(bytes)
-        .map(|text| source_map.add(name.to_string(), text))
-        .map_err(|(invalid_offset, lossy_text)| {
-            LoadError::InvalidUtf8(Span::new(
-                source_map.add(name.to_string(), lossy_text),
-                invalid_offset,
-                invalid_offset
-                    + u32::try_from('\u{FFFD}'.len_utf8()).expect("U+FFFD takes 3 bytes"),
-            ))
-        })
+    match decode(bytes) {
+        Ok(text) => Ok(source_map.add(name.to_string(), text)),
+        Err((invalid_offset, lossy_text)) => Err(LoadError::InvalidUtf8(Span::new(
+            source_map.add(name.to_string(), lossy_text),
+            invalid_offset,
+            invalid_offset + u32::try_from('\u{FFFD}'.len_utf8()).expect("U+FFFD takes 3 bytes"),
+        ))),
+    }
+}
+
+fn read(path: &Path, limit: u64) -> io::Result<Vec<u8>> {
+    let mut bytes = Vec::new();
+
+    // One byte past the limit tells a file at the limit from a larger one, without reading
+    // the larger one whole.
+    File::open(path).and_then(|f| f.take(limit + 1).read_to_end(&mut bytes))?;
+
+    Ok(bytes)
 }
 
 /// Decodes `bytes` as UTF-8, without a leading byte order mark (LEX-1).
