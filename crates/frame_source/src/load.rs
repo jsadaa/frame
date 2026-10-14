@@ -86,11 +86,22 @@ fn load_file_with_limit(
 
     match decode(bytes) {
         Ok(text) => Ok(source_map.add(name.to_string(), text)),
-        Err((invalid_offset, lossy_text)) => Err(LoadError::InvalidUtf8(Span::new(
-            source_map.add(name.to_string(), lossy_text),
-            invalid_offset,
-            invalid_offset + u32::try_from('\u{FFFD}'.len_utf8()).expect("U+FFFD takes 3 bytes"),
-        ))),
+        Err((invalid_offset, lossy_text)) => {
+            let invalid_offset = usize_to_u32(
+                invalid_offset,
+                "the bytes are within the size limit, so their offsets fit in u32",
+            );
+
+            Err(LoadError::InvalidUtf8(Span::new(
+                source_map.add(name.to_string(), lossy_text),
+                invalid_offset,
+                invalid_offset
+                    + usize_to_u32(
+                        char::REPLACEMENT_CHARACTER.len_utf8(),
+                        "U+FFFD takes 3 bytes",
+                    ),
+            )))
+        }
     }
 }
 
@@ -110,7 +121,7 @@ fn read(path: &Path, limit: u64) -> io::Result<Vec<u8>> {
 ///
 /// If the bytes are not valid UTF-8, returns the offset of the first invalid byte, counted
 /// without the mark, and the text with each invalid sequence replaced by U+FFFD.
-fn decode(mut bytes: Vec<u8>) -> Result<String, (u32, String)> {
+fn decode(mut bytes: Vec<u8>) -> Result<String, (usize, String)> {
     // A mark elsewhere stays: the lexer refuses it (LEX-2).
     if bytes.starts_with(&[0xEF, 0xBB, 0xBF]) {
         bytes.drain(..3);
@@ -118,11 +129,14 @@ fn decode(mut bytes: Vec<u8>) -> Result<String, (u32, String)> {
 
     String::from_utf8(bytes).map_err(|error| {
         (
-            u32::try_from(error.utf8_error().valid_up_to())
-                .expect("the bytes are within the size limit, so their offsets fit in u32"),
+            error.utf8_error().valid_up_to(),
             String::from_utf8_lossy(&error.into_bytes()).into_owned(),
         )
     })
+}
+
+fn usize_to_u32(num: usize, message: &str) -> u32 {
+    u32::try_from(num).expect(message)
 }
 
 #[cfg(test)]
