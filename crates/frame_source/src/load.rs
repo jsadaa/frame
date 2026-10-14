@@ -1,7 +1,13 @@
 //! Loading a source file: read from the disk, checked as UTF-8 (LEX-1) and against the
 //! size limit (CNF-6), then added to a [`SourceMap`].
 
-use std::{error::Error, fmt::Display, fs::File, io::Read, path::Path};
+use std::{
+    error::Error,
+    fmt::Display,
+    fs::File,
+    io::{self, Read},
+    path::{Path, PathBuf},
+};
 
 use super::{FileId, SourceMap, Span};
 
@@ -15,9 +21,9 @@ pub enum LoadError {
     /// The system could not open or read the file. It is not added to the source map.
     Read {
         /// The path, as given to [`load_file`].
-        path: String,
-        /// The message of the system error.
-        system_error: String,
+        path: PathBuf,
+        /// The system error.
+        system_error: io::Error,
     },
     /// The file is not valid UTF-8 (LEX-1). It is added with each invalid sequence replaced
     /// by U+FFFD; the span covers the first one.
@@ -36,7 +42,7 @@ impl Display for LoadError {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
             LoadError::Read { path, system_error } => {
-                write!(f, "cannot read {path}: {system_error}")
+                write!(f, "cannot read {}: {system_error}", path.display())
             }
             LoadError::InvalidUtf8(_) => write!(f, "source file is not valid UTF-8"),
             LoadError::TooLarge { file, limit } => write!(
@@ -68,8 +74,8 @@ fn load_file_with_limit(
     limit: u64,
 ) -> Result<FileId, LoadError> {
     let file = File::open(path).map_err(|error| LoadError::Read {
-        path: path.to_string_lossy().to_string(),
-        system_error: error.to_string(),
+        path: path.to_path_buf(),
+        system_error: error,
     })?;
 
     let mut bytes = Vec::new();
@@ -79,8 +85,8 @@ fn load_file_with_limit(
         .take(limit + 1)
         .read_to_end(&mut bytes)
         .map_err(|error| LoadError::Read {
-            path: path.to_string_lossy().to_string(),
-            system_error: error.to_string(),
+            path: path.to_path_buf(),
+            system_error: error,
         })?;
 
     if bytes.len() as u64 > limit {
@@ -111,8 +117,7 @@ fn load_file_with_limit(
 fn decode(mut bytes: Vec<u8>) -> Result<String, (u32, String)> {
     // A mark elsewhere stays: the lexer refuses it (LEX-2).
     if bytes.starts_with(&[0xEF, 0xBB, 0xBF]) {
-        let drain = bytes.drain(..3);
-        println!("{drain:?}");
+        bytes.drain(..3);
     }
 
     String::from_utf8(bytes).map_err(|error| {
@@ -130,7 +135,7 @@ mod tests {
 
     use super::{FileId, LoadError, SourceMap, decode, load_file_with_limit};
     use std::{
-        fs,
+        fs, io,
         path::{Path, PathBuf},
     };
 
@@ -256,12 +261,12 @@ mod tests {
     #[test]
     fn read_error_displays_the_path_and_the_system_error() {
         let error = LoadError::Read {
-            path: String::from("src/a.fm"),
-            system_error: String::from("a system error message"),
+            path: PathBuf::from("src/a.fm"),
+            system_error: io::Error::from(io::ErrorKind::NotFound),
         };
         assert_eq!(
             format!("{error}"),
-            String::from("cannot read src/a.fm: a system error message")
+            String::from("cannot read src/a.fm: entity not found")
         )
     }
 

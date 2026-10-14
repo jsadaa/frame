@@ -1,7 +1,7 @@
 //! Loading files through the public interface of `frame_source`.
 
 use std::{
-    fs,
+    fs, io,
     path::{Path, PathBuf},
 };
 
@@ -71,7 +71,7 @@ fn missing_file_is_a_read_error() {
     };
 
     assert_eq!(path, error_path);
-    assert_eq!(system_error, "No such file or directory (os error 2)");
+    assert_eq!(system_error.kind(), io::ErrorKind::NotFound);
 }
 
 #[test]
@@ -88,5 +88,5 @@ fn directory_is_a_read_error() {
     };
 
     assert_eq!(path, error_path);
-    assert_eq!(system_error, "Is a directory (os error 21)");
+    assert_eq!(system_error.kind(), io::ErrorKind::IsADirectory);
 }
