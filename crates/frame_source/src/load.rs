@@ -139,7 +139,7 @@ mod tests {
 
     use super::{FileId, LoadError, SourceMap, decode, load_file_with_limit};
     use std::{
-        fs, io,
+        io,
         path::{Path, PathBuf},
     };
 
@@ -149,10 +149,6 @@ mod tests {
 
     fn str_to_bytes(text: &str) -> Vec<u8> {
         String::from(text).into_bytes()
-    }
-
-    fn bytes_to_lossy_string(bytes: Vec<u8>) -> String {
-        String::from_utf8_lossy(&bytes).to_string()
     }
 
     #[test]
@@ -191,64 +187,57 @@ mod tests {
 
     #[test]
     fn decode_rejects_a_lone_continuation_byte() {
-        let bytes: Vec<u8> = [0x80].to_vec();
         assert_eq!(
-            decode(bytes.clone()).unwrap_err(),
-            (0, bytes_to_lossy_string(bytes))
+            decode([0x80].to_vec()).unwrap_err(),
+            (0, String::from("\u{FFFD}"))
         );
     }
 
     #[test]
     fn decode_rejects_an_invalid_byte_in_the_middle() {
-        let bytes: Vec<u8> = [b'a', b'b', 0xFF, b'c'].to_vec();
         assert_eq!(
-            decode(bytes.clone()).unwrap_err(),
-            (2, bytes_to_lossy_string(bytes))
+            decode([b'a', b'b', 0xFF, b'c'].to_vec()).unwrap_err(),
+            (2, String::from("ab\u{FFFD}c"))
         );
     }
 
     #[test]
     fn decode_rejects_a_sequence_truncated_at_the_end() {
-        let bytes: Vec<u8> = [b'a', 0xC3].to_vec();
         assert_eq!(
-            decode(bytes.clone()).unwrap_err(),
-            (1, bytes_to_lossy_string(bytes))
+            decode([b'a', 0xC3].to_vec()).unwrap_err(),
+            (1, String::from("a\u{FFFD}"))
         );
     }
 
     #[test]
     fn decode_rejects_an_overlong_encoding() {
-        let bytes: Vec<u8> = [0xC0, 0x80].to_vec();
         assert_eq!(
-            decode(bytes.clone()).unwrap_err(),
-            (0, bytes_to_lossy_string(bytes))
+            decode([0xC0, 0x80].to_vec()).unwrap_err(),
+            (0, String::from("\u{FFFD}\u{FFFD}"))
         );
     }
 
     #[test]
     fn decode_rejects_a_surrogate() {
-        let bytes: Vec<u8> = [0xED, 0xA0, 0x80].to_vec();
         assert_eq!(
-            decode(bytes.clone()).unwrap_err(),
-            (0, bytes_to_lossy_string(bytes))
+            decode([0xED, 0xA0, 0x80].to_vec()).unwrap_err(),
+            (0, String::from("\u{FFFD}\u{FFFD}\u{FFFD}"))
         );
     }
 
     #[test]
     fn decode_rejects_a_code_point_beyond_u10ffff() {
-        let bytes: Vec<u8> = [0xF4, 0x90, 0x80, 0x80].to_vec();
         assert_eq!(
-            decode(bytes.clone()).unwrap_err(),
-            (0, bytes_to_lossy_string(bytes))
+            decode([0xF4, 0x90, 0x80, 0x80].to_vec()).unwrap_err(),
+            (0, String::from("\u{FFFD}\u{FFFD}\u{FFFD}\u{FFFD}"))
         );
     }
 
     #[test]
     fn decode_counts_the_invalid_offset_without_the_bom() {
-        let mut bytes: Vec<u8> = [0xEF, 0xBB, 0xBF, 0xFF].to_vec();
         assert_eq!(
-            decode(bytes.clone()).unwrap_err(),
-            (0, bytes_to_lossy_string(bytes.drain(3..).collect()))
+            decode([0xEF, 0xBB, 0xBF, 0xFF].to_vec()).unwrap_err(),
+            (0, String::from("\u{FFFD}"))
         );
     }
 
@@ -259,7 +248,7 @@ mod tests {
         let id = load_file_with_limit(source_map, &path, "valid.fm", 10).unwrap();
         let file = source_map.file(id);
         assert_eq!(id, FileId(0));
-        assert_eq!(file.text(), fs::read_to_string(path).unwrap())
+        assert_eq!(file.text(), "let a = 1\n")
     }
 
     #[test]

@@ -1,7 +1,7 @@
 //! Loading files through the public interface of `frame_source`.
 
 use std::{
-    fs, io,
+    io,
     path::{Path, PathBuf},
 };
 
@@ -19,7 +19,7 @@ fn loads_a_valid_file() {
     let id = load_file(&mut source_map, &path, name).unwrap();
     let file = source_map.file(id);
     assert_eq!(name, file.name());
-    assert_eq!(fs::read_to_string(path).unwrap(), file.text())
+    assert_eq!(file.text(), "let a = 1\n")
 }
 
 #[test]
@@ -30,10 +30,7 @@ fn removes_the_bom() {
     let id = load_file(&mut source_map, &path, name).unwrap();
     let file = source_map.file(id);
     assert_eq!(name, file.name());
-    assert_eq!(
-        fs::read_to_string(path).unwrap().drain(3..).as_str(),
-        file.text()
-    )
+    assert_eq!(file.text(), "let a = 1\n")
 }
 
 #[test]
