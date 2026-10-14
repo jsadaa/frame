@@ -75,7 +75,7 @@ fn load_file_with_limit(
     name: &str,
     limit: u64,
 ) -> Result<FileId, LoadError> {
-    let bytes = read(path, limit).map_err(|error| LoadError::Read {
+    let bytes = read_bounded(path, limit).map_err(|error| LoadError::Read {
         path: path.to_path_buf(),
         system_error: error,
     })?;
@@ -110,12 +110,13 @@ fn load_file_with_limit(
     }
 }
 
-fn read(path: &Path, limit: u64) -> io::Result<Vec<u8>> {
+/// Reads the file at `path`, up to one byte past `limit`.
+fn read_bounded(path: &Path, limit: u64) -> io::Result<Vec<u8>> {
     let mut bytes = Vec::new();
 
     // One byte past the limit tells a file at the limit from a larger one, without reading
     // the larger one whole.
-    File::open(path).and_then(|f| f.take(limit + 1).read_to_end(&mut bytes))?;
+    File::open(path)?.take(limit + 1).read_to_end(&mut bytes)?;
 
     Ok(bytes)
 }
