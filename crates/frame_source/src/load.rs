@@ -172,6 +172,22 @@ mod tests {
     }
 
     #[test]
+    fn decode_keeps_a_bom_anywhere_else() {
+        assert_eq!(
+            decode([b'a', 0xEF, 0xBB, 0xBF, b'b'].to_vec()).unwrap(),
+            String::from("a\u{feff}b")
+        )
+    }
+
+    #[test]
+    fn decode_removes_a_bom_alone() {
+        assert_eq!(
+            decode([0xEF, 0xBB, 0xBF].to_vec()).unwrap(),
+            String::from("")
+        )
+    }
+
+    #[test]
     fn decode_rejects_a_lone_continuation_byte() {
         let bytes: Vec<u8> = [0x80].to_vec();
         assert_eq!(
@@ -249,12 +265,15 @@ mod tests {
         let path = fixture_path("valid.fm");
         let source_map = &mut SourceMap::new();
         let result = load_file_with_limit(source_map, &path, "valid.fm", 9);
-        let Err(LoadError::TooLarge { file, limit }) = result else {
+        let Err(LoadError::TooLarge { file: id, limit }) = result else {
             panic!("expected a TooLarge error, got {result:?}")
         };
+        let file = source_map.file(id);
 
-        assert_eq!(file, FileId(0));
+        assert_eq!(id, FileId(0));
         assert_eq!(limit, 9);
+        assert_eq!(file.name(), "valid.fm");
+        assert_eq!(file.text(), "");
     }
 
     #[test]

@@ -48,7 +48,7 @@ fn locates_the_first_invalid_byte() {
     };
 
     let file = source_map.file(span.file());
-    let line_col = file.line_col(14);
+    let line_col = file.line_col(span.start());
 
     assert_eq!(span.len(), 3);
     assert_eq!(line_col.line(), 2);
