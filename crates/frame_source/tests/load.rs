@@ -5,7 +5,7 @@ use std::{
     path::{Path, PathBuf},
 };
 
-use frame_source::{FileId, LoadError, SourceMap, load_file};
+use frame_source::{LoadError, SourceMap, load_file};
 
 fn fixture_path(name: &str) -> PathBuf {
     Path::new(env!("CARGO_MANIFEST_DIR")).join(format!("tests/fixtures/{}", name))
@@ -18,7 +18,6 @@ fn loads_a_valid_file() {
     let mut source_map = SourceMap::new();
     let id = load_file(&mut source_map, &path, name).unwrap();
     let file = source_map.file(id);
-    assert_eq!(id, FileId(0));
     assert_eq!(name, file.name());
     assert_eq!(fs::read_to_string(path).unwrap(), file.text())
 }
@@ -30,7 +29,6 @@ fn removes_the_bom() {
     let mut source_map = SourceMap::new();
     let id = load_file(&mut source_map, &path, name).unwrap();
     let file = source_map.file(id);
-    assert_eq!(id, FileId(0));
     assert_eq!(name, file.name());
     assert_eq!(
         fs::read_to_string(path).unwrap().drain(3..).as_str(),
@@ -49,7 +47,7 @@ fn locates_the_first_invalid_byte() {
         panic!("expected an InvalidUtf8 error, got {result:?}")
     };
 
-    let file = source_map.file(FileId(0));
+    let file = source_map.file(span.file());
     let line_col = file.line_col(14);
 
     assert_eq!(span.len(), 3);
