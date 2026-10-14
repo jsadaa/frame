@@ -42,7 +42,7 @@ impl Display for LoadError {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
             LoadError::Read { path, system_error } => {
-                write!(f, "cannot read {}: {system_error}", path.display())
+                write!(f, "cannot read '{}': {system_error}", path.display())
             }
             LoadError::InvalidUtf8(_) => write!(f, "source file is not valid UTF-8"),
             LoadError::TooLarge { file, limit } => write!(
@@ -266,7 +266,7 @@ mod tests {
         };
         assert_eq!(
             format!("{error}"),
-            String::from("cannot read src/a.fm: entity not found")
+            String::from("cannot read 'src/a.fm': entity not found")
         )
     }
 
