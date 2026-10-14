@@ -45,10 +45,9 @@ impl Display for LoadError {
                 write!(f, "cannot read '{}': {system_error}", path.display())
             }
             LoadError::InvalidUtf8(_) => write!(f, "source file is not valid UTF-8"),
-            LoadError::TooLarge { file, limit } => write!(
-                f,
-                "source file {file:?} is too large: the limit is {limit} bytes"
-            ),
+            LoadError::TooLarge { file: _, limit } => {
+                write!(f, "source file is too large: the limit is {limit} bytes")
+            }
         }
     }
 }
@@ -287,7 +286,7 @@ mod tests {
         };
         assert_eq!(
             format!("{error}"),
-            String::from("source file FileId(0) is too large: the limit is 10 bytes")
+            String::from("source file is too large: the limit is 10 bytes")
         )
     }
 }
