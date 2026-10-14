@@ -26,8 +26,11 @@ pub enum LoadError {
         system_error: io::Error,
     },
     /// The file is not valid UTF-8 (LEX-1). It is added with each invalid sequence replaced
-    /// by U+FFFD; the span covers the first one.
-    InvalidUtf8(Span),
+    /// by U+FFFD;
+    InvalidUtf8 {
+        /// The span, which covers the first invalid sequence.
+        span: Span,
+    },
     /// The file is larger than the limit (CNF-6). It is added with an empty text, so that a
     /// diagnostic can name it.
     TooLarge {
@@ -44,7 +47,7 @@ impl Display for LoadError {
             LoadError::Read { path, system_error } => {
                 write!(f, "cannot read '{}': {system_error}", path.display())
             }
-            LoadError::InvalidUtf8(_) => write!(f, "source file is not valid UTF-8"),
+            LoadError::InvalidUtf8 { .. } => write!(f, "source file is not valid UTF-8"),
             LoadError::TooLarge { file: _, limit } => {
                 write!(f, "source file is too large: the limit is {limit} bytes")
             }
@@ -92,15 +95,17 @@ fn load_file_with_limit(
                 "the bytes are within the size limit, so their offsets fit in u32",
             );
 
-            Err(LoadError::InvalidUtf8(Span::new(
-                source_map.add(name.to_string(), lossy_text),
-                invalid_offset,
-                invalid_offset
-                    + usize_to_u32(
-                        char::REPLACEMENT_CHARACTER.len_utf8(),
-                        "U+FFFD takes 3 bytes",
-                    ),
-            )))
+            Err(LoadError::InvalidUtf8 {
+                span: Span::new(
+                    source_map.add(name.to_string(), lossy_text),
+                    invalid_offset,
+                    invalid_offset
+                        + usize_to_u32(
+                            char::REPLACEMENT_CHARACTER.len_utf8(),
+                            "U+FFFD takes 3 bytes",
+                        ),
+                ),
+            })
         }
     }
 }
@@ -301,7 +306,9 @@ mod tests {
 
     #[test]
     fn invalid_utf8_error_displays_its_title() {
-        let error = LoadError::InvalidUtf8(Span::new(FileId(0), 4, 9));
+        let error = LoadError::InvalidUtf8 {
+            span: Span::new(FileId(0), 4, 9),
+        };
         assert_eq!(
             format!("{error}"),
             String::from("source file is not valid UTF-8")

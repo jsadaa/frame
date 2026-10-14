@@ -43,7 +43,7 @@ fn locates_the_first_invalid_byte() {
     let mut source_map = SourceMap::new();
 
     let result = load_file(&mut source_map, &path, name);
-    let Err(LoadError::InvalidUtf8(span)) = result else {
+    let Err(LoadError::InvalidUtf8 { span }) = result else {
         panic!("expected an InvalidUtf8 error, got {result:?}")
     };
 
