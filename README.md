@@ -9,6 +9,36 @@ Frame is an experimental compiled and typed application language, trying to find
 
 One writes the logic: values, decisions, rules. The rest is up to execution.
 
+A small script; its syntax may still change (highlighted as Rust, a close syntax, for now):
+
+```rust
+enum Expr {
+    num(value: i64)
+    add(left: Expr, right: Expr)
+    div(left: Expr, right: Expr)
+}
+
+type DivisionByZero {}
+
+fn eval(e: Expr) -> i64 fails DivisionByZero = match e {
+    .num(value)       => value
+    .add(left, right) => try eval(left) + try eval(right)
+    .div(left, right) => {
+        let divisor = try eval(right)
+        if divisor == 0 { fail DivisionByZero() } else { try eval(left) / divisor }
+    }
+}
+
+let e = Expr.div(left: .num(84), right: .add(left: .num(1), right: .num(1)))
+
+match attempt eval(e) {
+    .ok(value) => print("result: {value}")
+    .err(_)    => print("cannot divide by zero")
+}
+```
+
+`fails` declares the failure, `try` passes it on, and `attempt` turns it into a value to match.
+
 ## Status
 
 The language is in an early stage of development.
@@ -24,21 +54,7 @@ target/release/frame --help
 
 The commands are listed by `frame --help`; none is implemented yet.
 
-## Development
-
-Run the checks before every commit:
-
-```bash
-scripts/check.sh
-```
-
-The script runs three steps, in order, and stops at the first failure:
-
-1. `cargo fmt --all --check`: the code follows rustfmt's default style;
-2. `cargo clippy --workspace --all-targets -- -D warnings`: no compiler or Clippy warning remains;
-3. `cargo test --workspace`: every test passes.
-
-The CI runs the same script on every push.
+`scripts/check.sh` runs the checks that the CI runs on every push: formatting, Clippy, and the tests.
 
 ## Project structure
 
