@@ -6,7 +6,7 @@
 
 mod load;
 
-pub use load::*;
+pub use load::{LoadError, MAX_SOURCE_SIZE, load_file};
 use std::fmt;
 
 /// The id of a file in a [`SourceMap`]; only [`SourceMap::add`] makes one.
