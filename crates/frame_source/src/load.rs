@@ -90,7 +90,7 @@ fn load_file_with_limit(
         });
     }
 
-    decode(&mut bytes)
+    decode(bytes)
         .map(|text| source_map.add(name.to_string(), text))
         .map_err(|(invalid_offset, lossy_text)| {
             LoadError::InvalidUtf8(Span::new(
@@ -108,13 +108,14 @@ fn load_file_with_limit(
 ///
 /// If the bytes are not valid UTF-8, returns the offset of the first invalid byte, counted
 /// without the mark, and the text with each invalid sequence replaced by U+FFFD.
-fn decode(bytes: &mut Vec<u8>) -> Result<String, (u32, String)> {
+fn decode(mut bytes: Vec<u8>) -> Result<String, (u32, String)> {
     // A mark elsewhere stays: the lexer refuses it (LEX-2).
     if bytes.starts_with(&[0xEF, 0xBB, 0xBF]) {
-        bytes.drain(..3);
+        let drain = bytes.drain(..3);
+        println!("{drain:?}");
     }
 
-    String::from_utf8(bytes.clone()).map_err(|error| {
+    String::from_utf8(bytes).map_err(|error| {
         (
             u32::try_from(error.utf8_error().valid_up_to())
                 .expect("the bytes are within the size limit, so their offsets fit in u32"),
@@ -148,77 +149,74 @@ mod tests {
     #[test]
     fn decode_keeps_ascii_text() {
         assert_eq!(
-            decode(&mut str_to_bytes("let x = 1")).unwrap(),
+            decode(str_to_bytes("let x = 1")).unwrap(),
             String::from("let x = 1")
         )
     }
 
     #[test]
     fn decode_keeps_multibyte_characters() {
-        assert_eq!(
-            decode(&mut str_to_bytes("é€😀")).unwrap(),
-            String::from("é€😀")
-        );
+        assert_eq!(decode(str_to_bytes("é€😀")).unwrap(), String::from("é€😀"));
     }
 
     #[test]
     fn decode_removes_a_leading_bom() {
         assert_eq!(
-            decode(&mut [0xEF, 0xBB, 0xBF, b'a'].to_vec()).unwrap(),
+            decode([0xEF, 0xBB, 0xBF, b'a'].to_vec()).unwrap(),
             String::from("a")
         )
     }
 
     #[test]
     fn decode_rejects_a_lone_continuation_byte() {
-        let mut bytes: Vec<u8> = [0x80].to_vec();
+        let bytes: Vec<u8> = [0x80].to_vec();
         assert_eq!(
-            decode(&mut bytes).unwrap_err(),
+            decode(bytes.clone()).unwrap_err(),
             (0, bytes_to_lossy_string(bytes))
         );
     }
 
     #[test]
     fn decode_rejects_an_invalid_byte_in_the_middle() {
-        let mut bytes: Vec<u8> = [b'a', b'b', 0xFF, b'c'].to_vec();
+        let bytes: Vec<u8> = [b'a', b'b', 0xFF, b'c'].to_vec();
         assert_eq!(
-            decode(&mut bytes).unwrap_err(),
+            decode(bytes.clone()).unwrap_err(),
             (2, bytes_to_lossy_string(bytes))
         );
     }
 
     #[test]
     fn decode_rejects_a_sequence_truncated_at_the_end() {
-        let mut bytes: Vec<u8> = [b'a', 0xC3].to_vec();
+        let bytes: Vec<u8> = [b'a', 0xC3].to_vec();
         assert_eq!(
-            decode(&mut bytes).unwrap_err(),
+            decode(bytes.clone()).unwrap_err(),
             (1, bytes_to_lossy_string(bytes))
         );
     }
 
     #[test]
     fn decode_rejects_an_overlong_encoding() {
-        let mut bytes: Vec<u8> = [0xC0, 0x80].to_vec();
+        let bytes: Vec<u8> = [0xC0, 0x80].to_vec();
         assert_eq!(
-            decode(&mut bytes).unwrap_err(),
+            decode(bytes.clone()).unwrap_err(),
             (0, bytes_to_lossy_string(bytes))
         );
     }
 
     #[test]
     fn decode_rejects_a_surrogate() {
-        let mut bytes: Vec<u8> = [0xED, 0xA0, 0x80].to_vec();
+        let bytes: Vec<u8> = [0xED, 0xA0, 0x80].to_vec();
         assert_eq!(
-            decode(&mut bytes).unwrap_err(),
+            decode(bytes.clone()).unwrap_err(),
             (0, bytes_to_lossy_string(bytes))
         );
     }
 
     #[test]
     fn decode_rejects_a_code_point_beyond_u10ffff() {
-        let mut bytes: Vec<u8> = [0xF4, 0x90, 0x80, 0x80].to_vec();
+        let bytes: Vec<u8> = [0xF4, 0x90, 0x80, 0x80].to_vec();
         assert_eq!(
-            decode(&mut bytes).unwrap_err(),
+            decode(bytes.clone()).unwrap_err(),
             (0, bytes_to_lossy_string(bytes))
         );
     }
@@ -227,8 +225,8 @@ mod tests {
     fn decode_counts_the_invalid_offset_without_the_bom() {
         let mut bytes: Vec<u8> = [0xEF, 0xBB, 0xBF, 0xFF].to_vec();
         assert_eq!(
-            decode(&mut bytes).unwrap_err(),
-            (0, bytes_to_lossy_string(bytes))
+            decode(bytes.clone()).unwrap_err(),
+            (0, bytes_to_lossy_string(bytes.drain(3..).collect()))
         );
     }
 
