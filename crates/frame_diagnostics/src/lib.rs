@@ -168,18 +168,7 @@ impl Primary {
     }
 
     /// Creates the primary location of `span`, with an optional message.
-    ///
-    /// # Panics
-    ///
-    /// Panics if `message` does not fit on one line.
     pub fn span(span: Span, message: Option<String>) -> Self {
-        if let Some(message) = message.clone() {
-            assert!(
-                text_fits_on_one_line(&message),
-                "expected one line of text, got: {message}"
-            );
-        }
-
         Self::Span { span, message }
     }
 }
@@ -257,7 +246,7 @@ impl Diagnostic {
     ///
     /// # Panics
     ///
-    /// Panics if `title` does not fit on one line.
+    /// Panics if `title`, or `primary` message does not fit on one line.
     pub fn new(code: RuleCode, title: impl Into<String>, primary: Primary) -> Self {
         let title = title.into();
 
@@ -265,6 +254,17 @@ impl Diagnostic {
             text_fits_on_one_line(&title),
             "expected one line of text, got: {title}",
         );
+
+        if let Primary::Span {
+            message: Some(ref text),
+            ..
+        } = primary
+        {
+            assert!(
+                text_fits_on_one_line(text),
+                "expected one line of text, got: {text}"
+            );
+        }
 
         Self {
             code,
