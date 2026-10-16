@@ -274,11 +274,11 @@ impl Diagnostic {
         assert_text_fits_on_one_line(&title, "title");
 
         if let Primary::Span {
-            message: Some(ref text),
+            message: Some(message),
             ..
-        } = primary
+        } = &primary
         {
-            assert_text_fits_on_one_line(text, "message of the primary location");
+            assert_text_fits_on_one_line(message, "message of the primary location");
         }
 
         Self {
