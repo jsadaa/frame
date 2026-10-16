@@ -145,7 +145,7 @@ impl Display for RuleCode {
 
 /// The primary location of a diagnostic: the span in cause, which the rendering underlines
 /// with `^`, or a whole file.
-#[derive(Debug, PartialEq, Eq)]
+#[derive(Debug, PartialEq, Eq, Clone)]
 pub enum Primary {
     /// A whole file, for an error that no line shows, such as a file too large (CNF-6).
     File {
@@ -175,7 +175,7 @@ impl Primary {
 
 /// A secondary label: another span that explains the error, which the rendering underlines
 /// with `-`, and its message.
-#[derive(Debug, PartialEq, Eq)]
+#[derive(Debug, PartialEq, Eq, Clone)]
 pub struct Label {
     span: Span,
     message: String,
@@ -210,7 +210,7 @@ impl Label {
 }
 
 /// An automatic fix: the text that replaces a span (DIA-1).
-#[derive(Debug, PartialEq, Eq)]
+#[derive(Debug, PartialEq, Eq, Clone)]
 pub struct Fix {
     span: Span,
     replacement: String,
@@ -238,7 +238,7 @@ impl Fix {
 ///
 /// [`Diagnostic::new`] takes what every diagnostic has; the `with_` methods add the rest, in
 /// the same expression.
-#[derive(Debug, PartialEq, Eq)]
+#[derive(Debug, PartialEq, Eq, Clone)]
 // Built, then dropped, a diagnostic is an error that the user never sees.
 #[must_use]
 pub struct Diagnostic {
