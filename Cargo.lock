@@ -7,5 +7,12 @@ name = "frame"
 version = "0.1.0"
 
 [[package]]
+name = "frame_diagnostics"
+version = "0.1.0"
+dependencies = [
+ "frame_source",
+]
+
+[[package]]
 name = "frame_source"
 version = "0.1.0"
