@@ -361,17 +361,7 @@ impl Diagnostic {
 
 /// Returns `true` if `text` fits on one line: at most one `\n`, at its end.
 fn text_fits_on_one_line(text: &str) -> bool {
-    if let Some(position) = text.find("\n")
-        && text.get(position + 1..).is_some()
-    {
-        return true;
-    }
-
-    if text.matches("\n").count() <= 1 {
-        return true;
-    }
-
-    false
+    !text.contains("\n")
 }
 
 #[cfg(test)]
