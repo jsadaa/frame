@@ -5,7 +5,7 @@
 //! (DIA-2).
 
 use frame_source::{FileId, Span};
-use std::fmt::Display;
+use std::fmt;
 
 /// The prefix of a rule code, which names the area of the specification the rule belongs
 /// to; written in capitals, such as `MUT`.
@@ -73,8 +73,8 @@ pub enum Prefix {
     Imp,
 }
 
-impl Display for Prefix {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+impl fmt::Display for Prefix {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         let prefix = match self {
             Prefix::Cnf => "CNF",
             Prefix::Lex => "LEX",
@@ -137,8 +137,8 @@ impl RuleCode {
     }
 }
 
-impl Display for RuleCode {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+impl fmt::Display for RuleCode {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         write!(f, "{}-{}", self.prefix, self.number)
     }
 }
