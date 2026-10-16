@@ -3,7 +3,6 @@
 use frame_source::{FileId, Span};
 use std::fmt::Display;
 
-#[allow(clippy::upper_case_acronyms)]
 #[derive(Debug, PartialEq, Eq, Clone, Copy)]
 /// The prefix of a rule
 pub enum Prefix {
@@ -361,3 +360,6 @@ fn text_fits_on_one_line(text: &str) -> bool {
 
     false
 }
+
+#[cfg(test)]
+mod tests {}
