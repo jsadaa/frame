@@ -552,6 +552,15 @@ mod tests {
     }
 
     #[test]
+    fn label_is_read_back_through_its_accessors() {
+        let file = add_file("if a && b {\n}\n");
+        let label = Label::new(Span::new(file, 3, 9), "in this condition");
+
+        assert_eq!(label.span(), Span::new(file, 3, 9));
+        assert_eq!(label.message(), "in this condition");
+    }
+
+    #[test]
     fn primary_location_can_be_a_whole_file() {
         let file = add_file("");
         let diagnostic = Diagnostic::new(
@@ -576,6 +585,12 @@ mod tests {
     #[should_panic(expected = "the title of a diagnostic must fit on one line: \"two\\nlines\"")]
     fn refuses_a_title_on_two_lines() {
         let _ = Diagnostic::new(INVALID_UTF8, "two\nlines", Primary::file(add_file("")));
+    }
+
+    #[test]
+    #[should_panic(expected = "the title of a diagnostic must fit on one line: \"title\\n\"")]
+    fn refuses_a_title_ending_with_a_newline() {
+        let _ = Diagnostic::new(INVALID_UTF8, "title\n", Primary::file(add_file("")));
     }
 
     #[test]
