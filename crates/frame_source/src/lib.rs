@@ -14,7 +14,7 @@ use std::fmt;
 pub struct FileId(u32);
 
 /// A file of a [`SourceMap`]: its name, its text, and where its lines start.
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct SourceFile {
     /// The name shown in locations, such as `src/main.fm`.
     name: String,

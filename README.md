@@ -62,6 +62,7 @@ Frame is organized as a Cargo workspace with the following crates:
 
 - **frame**: the command-line tool
 - **frame_source**: source files, positions in their text, and loading a file from disk
+- **frame_diagnostics**: todo
 
 ## Use of AI
 
