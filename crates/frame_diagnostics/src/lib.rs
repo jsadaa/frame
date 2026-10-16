@@ -167,11 +167,19 @@ impl Primary {
         Self::File { file }
     }
 
-    /// Creates the primary location of `span`, with an optional message.
-    pub fn span(span: Span, message: Option<impl Into<String>>) -> Self {
+    /// Creates the primary location of `span`, without a message.
+    pub fn span(span: Span) -> Self {
         Self::Span {
             span,
-            message: message.map(|m| m.into()),
+            message: None,
+        }
+    }
+
+    /// Creates the primary location of `span`, with `message` written after the `^`.
+    pub fn span_with_message(span: Span, message: impl Into<String>) -> Self {
+        Self::Span {
+            span,
+            message: Some(message.into()),
         }
     }
 }
@@ -449,7 +457,7 @@ mod tests {
         let diagnostic = Diagnostic::new(
             INVALID_UTF8,
             "source file is not valid UTF-8",
-            Primary::span(Span::new(file, 4, 7), message.clone()),
+            Primary::span(Span::new(file, 4, 7)),
         );
 
         assert_eq!(diagnostic.code(), RuleCode::new(Prefix::Lex, 1));
@@ -458,7 +466,7 @@ mod tests {
             diagnostic.primary(),
             &Primary::Span {
                 span: Span::new(file, 4, 7),
-                message,
+                message: None,
             }
         );
         assert_eq!(diagnostic.labels(), &Vec::new());
@@ -473,7 +481,7 @@ mod tests {
         let diagnostic = Diagnostic::new(
             REFUSED_TOKEN,
             "`&&` is not an operator",
-            Primary::span(Span::new(file, 5, 7), Some(String::from("use `and`"))),
+            Primary::span_with_message(Span::new(file, 5, 7), "use `and`"),
         )
         .with_label(Label::new(Span::new(file, 3, 9), "in this condition"))
         .with_reason("logical operators are written as words")
@@ -518,7 +526,7 @@ mod tests {
         let diagnostic = Diagnostic::new(
             REFUSED_TOKEN,
             "`&&` is not an operator",
-            Primary::span(Span::new(file, 5, 7), message),
+            Primary::span(Span::new(file, 5, 7)),
         )
         .with_label(Label::new(Span::new(file, 8, 9), "added first"))
         .with_label(Label::new(Span::new(file, 3, 4), "added second"))
