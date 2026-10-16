@@ -108,7 +108,7 @@ impl Display for Prefix {
             Prefix::Imp => "IMP",
         };
 
-        write!(f, "{prefix}")
+        f.write_str(prefix)
     }
 }
 
