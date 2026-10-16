@@ -193,10 +193,7 @@ impl Label {
     pub fn new(span: Span, message: impl Into<String>) -> Self {
         let message = message.into();
 
-        assert!(
-            text_fits_on_one_line(&message),
-            "expected one line of text, got: {message}"
-        );
+        assert_text_fits_on_one_line(&message, "message of a label");
 
         Self { span, message }
     }
@@ -266,20 +263,14 @@ impl Diagnostic {
     pub fn new(code: RuleCode, title: impl Into<String>, primary: Primary) -> Self {
         let title = title.into();
 
-        assert!(
-            text_fits_on_one_line(&title),
-            "expected one line of text, got: {title}",
-        );
+        assert_text_fits_on_one_line(&title, "title");
 
         if let Primary::Span {
             message: Some(ref text),
             ..
         } = primary
         {
-            assert!(
-                text_fits_on_one_line(text),
-                "expected one line of text, got: {text}"
-            );
+            assert_text_fits_on_one_line(text, "message of the primary location")
         }
 
         Self {
@@ -307,10 +298,7 @@ impl Diagnostic {
     pub fn with_reason(mut self, reason: impl Into<String>) -> Self {
         let reason = reason.into();
 
-        assert!(
-            text_fits_on_one_line(&reason),
-            "expected one line of text, got: {reason}"
-        );
+        assert_text_fits_on_one_line(&reason, "reason");
 
         self.reason = Some(reason);
         self
@@ -324,10 +312,7 @@ impl Diagnostic {
     pub fn with_help(mut self, help: impl Into<String>) -> Self {
         let help = help.into();
 
-        assert!(
-            text_fits_on_one_line(&help),
-            "expected one line of text, got: {help}"
-        );
+        assert_text_fits_on_one_line(&help, "help");
 
         self.help = Some(help);
         self
@@ -375,9 +360,13 @@ impl Diagnostic {
     }
 }
 
-/// Returns `true` if `text` fits on one line: at most one `\n`, at its end.
-fn text_fits_on_one_line(text: &str) -> bool {
-    !text.contains("\n")
+/// Asserts that `text` fits on one line: at most one `\n`, at its end.
+fn assert_text_fits_on_one_line(text: &str, field: &str) {
+    assert!(
+        !text.contains("\n"),
+        "the {field} of a diagnostic must fit on one line: \"{}\"",
+        text
+    );
 }
 
 #[cfg(test)]
@@ -577,13 +566,15 @@ mod tests {
     }
 
     #[test]
-    #[should_panic(expected = "expected one line of text, got: two\nlines")]
+    #[should_panic(expected = "the title of a diagnostic must fit on one line: \"two\nlines\"")]
     fn refuses_a_title_on_two_lines() {
         let _ = Diagnostic::new(INVALID_UTF8, "two\nlines", Primary::file(add_file("")));
     }
 
     #[test]
-    #[should_panic(expected = "expected one line of text, got: two\nlines")]
+    #[should_panic(
+        expected = "the message of the primary location of a diagnostic must fit on one line: \"two\nlines\""
+    )]
     fn refuses_a_primary_message_on_two_lines() {
         let _ = Diagnostic::new(
             RuleCode::new(Prefix::Cnf, 6),
@@ -596,21 +587,23 @@ mod tests {
     }
 
     #[test]
-    #[should_panic(expected = "expected one line of text, got: two\nlines")]
+    #[should_panic(
+        expected = "the message of a label of a diagnostic must fit on one line: \"two\nlines\""
+    )]
     fn refuses_a_label_on_two_lines() {
         let span = Span::new(add_file("if a && b {\n}\n"), 3, 4);
         Label::new(span, "two\nlines");
     }
 
     #[test]
-    #[should_panic(expected = "expected one line of text, got: two\nlines")]
+    #[should_panic(expected = "the reason of a diagnostic must fit on one line: \"two\nlines\"")]
     fn refuses_a_reason_on_two_lines() {
         let diagnostic = Diagnostic::new(INVALID_UTF8, "title", Primary::file(add_file("")));
         let _ = diagnostic.with_reason("two\nlines");
     }
 
     #[test]
-    #[should_panic(expected = "expected one line of text, got: two\nlines")]
+    #[should_panic(expected = "the help of a diagnostic must fit on one line: \"two\nlines\"")]
     fn refuses_a_help_on_two_lines() {
         let diagnostic = Diagnostic::new(INVALID_UTF8, "title", Primary::file(add_file("")));
         let _ = diagnostic.with_help("two\nlines");
