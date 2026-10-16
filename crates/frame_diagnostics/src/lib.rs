@@ -156,7 +156,7 @@ pub enum Primary {
     Span {
         /// The text in cause.
         span: Span,
-        /// The message written after the `^`, on one line.
+        /// The message written after the `^`, on one line: [`Diagnostic::new`] checks it.
         message: Option<String>,
     },
 }
@@ -198,12 +198,12 @@ impl Label {
         Self { span, message }
     }
 
-    /// Returns the span of the secondary label.
-    pub fn span(&self) -> &Span {
-        &self.span
+    /// Returns the span.
+    pub fn span(&self) -> Span {
+        self.span
     }
 
-    /// Returns the message of the label
+    /// Returns the message.
     pub fn message(&self) -> &str {
         &self.message
     }
@@ -259,7 +259,7 @@ impl Diagnostic {
     ///
     /// # Panics
     ///
-    /// Panics if `title`, or `primary` message does not fit on one line.
+    /// Panics if `title`, or the message of `primary`, does not fit on one line.
     pub fn new(code: RuleCode, title: impl Into<String>, primary: Primary) -> Self {
         let title = title.into();
 
@@ -270,7 +270,7 @@ impl Diagnostic {
             ..
         } = primary
         {
-            assert_text_fits_on_one_line(text, "message of the primary location")
+            assert_text_fits_on_one_line(text, "message of the primary location");
         }
 
         Self {
@@ -360,12 +360,11 @@ impl Diagnostic {
     }
 }
 
-/// Asserts that `text` fits on one line: at most one `\n`, at its end.
+/// Asserts that `text` has no `\n`, not even a final one: the rendering ends each line itself.
 fn assert_text_fits_on_one_line(text: &str, field: &str) {
     assert!(
-        !text.contains("\n"),
-        "the {field} of a diagnostic must fit on one line: \"{}\"",
-        text
+        !text.contains('\n'),
+        "the {field} of a diagnostic must fit on one line: {text:?}"
     );
 }
 
@@ -566,14 +565,14 @@ mod tests {
     }
 
     #[test]
-    #[should_panic(expected = "the title of a diagnostic must fit on one line: \"two\nlines\"")]
+    #[should_panic(expected = "the title of a diagnostic must fit on one line: \"two\\nlines\"")]
     fn refuses_a_title_on_two_lines() {
         let _ = Diagnostic::new(INVALID_UTF8, "two\nlines", Primary::file(add_file("")));
     }
 
     #[test]
     #[should_panic(
-        expected = "the message of the primary location of a diagnostic must fit on one line: \"two\nlines\""
+        expected = "the message of the primary location of a diagnostic must fit on one line: \"two\\nlines\""
     )]
     fn refuses_a_primary_message_on_two_lines() {
         let _ = Diagnostic::new(
@@ -588,7 +587,7 @@ mod tests {
 
     #[test]
     #[should_panic(
-        expected = "the message of a label of a diagnostic must fit on one line: \"two\nlines\""
+        expected = "the message of a label of a diagnostic must fit on one line: \"two\\nlines\""
     )]
     fn refuses_a_label_on_two_lines() {
         let span = Span::new(add_file("if a && b {\n}\n"), 3, 4);
@@ -596,14 +595,14 @@ mod tests {
     }
 
     #[test]
-    #[should_panic(expected = "the reason of a diagnostic must fit on one line: \"two\nlines\"")]
+    #[should_panic(expected = "the reason of a diagnostic must fit on one line: \"two\\nlines\"")]
     fn refuses_a_reason_on_two_lines() {
         let diagnostic = Diagnostic::new(INVALID_UTF8, "title", Primary::file(add_file("")));
         let _ = diagnostic.with_reason("two\nlines");
     }
 
     #[test]
-    #[should_panic(expected = "the help of a diagnostic must fit on one line: \"two\nlines\"")]
+    #[should_panic(expected = "the help of a diagnostic must fit on one line: \"two\\nlines\"")]
     fn refuses_a_help_on_two_lines() {
         let diagnostic = Diagnostic::new(INVALID_UTF8, "title", Primary::file(add_file("")));
         let _ = diagnostic.with_help("two\nlines");
