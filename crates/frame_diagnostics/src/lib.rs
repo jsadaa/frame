@@ -375,4 +375,231 @@ fn text_fits_on_one_line(text: &str) -> bool {
 }
 
 #[cfg(test)]
-mod tests {}
+mod tests {
+    use super::{Diagnostic, Fix, Label, Prefix, Primary, RuleCode};
+    use frame_source::{FileId, SourceMap, Span};
+
+    const INVALID_UTF8: RuleCode = RuleCode::new(Prefix::Lex, 1);
+    const REFUSED_TOKEN: RuleCode = RuleCode::new(Prefix::Lex, 23);
+
+    fn add_file(text: &str) -> FileId {
+        SourceMap::new().add(String::from("demo.fm"), text.to_string())
+    }
+
+    #[test]
+    fn prefixes_are_written_in_capitals() {
+        let cases: [(Prefix, &str); 30] = [
+            (Prefix::Cap, "CAP"),
+            (Prefix::Cli, "CLI"),
+            (Prefix::Clo, "CLO"),
+            (Prefix::Col, "COL"),
+            (Prefix::Con, "CON"),
+            (Prefix::Cnf, "CNF"),
+            (Prefix::Dia, "DIA"),
+            (Prefix::Err, "ERR"),
+            (Prefix::Exp, "EXP"),
+            (Prefix::Fmt, "FMT"),
+            (Prefix::Fun, "FUN"),
+            (Prefix::Ifc, "IFC"),
+            (Prefix::Imp, "IMP"),
+            (Prefix::Inf, "INF"),
+            (Prefix::Lex, "LEX"),
+            (Prefix::Mod, "MOD"),
+            (Prefix::Mut, "MUT"),
+            (Prefix::Nam, "NAM"),
+            (Prefix::Pat, "PAT"),
+            (Prefix::Pkg, "PKG"),
+            (Prefix::Res, "RES"),
+            (Prefix::Run, "RUN"),
+            (Prefix::Scr, "SCR"),
+            (Prefix::Std, "STD"),
+            (Prefix::Stm, "STM"),
+            (Prefix::Syn, "SYN"),
+            (Prefix::Tst, "TST"),
+            (Prefix::Txt, "TXT"),
+            (Prefix::Typ, "TYP"),
+            (Prefix::Val, "VAL"),
+        ];
+
+        for (prefix, expected) in cases {
+            assert_eq!(prefix.to_string(), expected, "{prefix:?}");
+        }
+    }
+
+    #[test]
+    fn rule_codes_are_written_prefix_dash_number() {
+        let cases = [
+            (RuleCode::new(Prefix::Mut, 4), "MUT-4"),
+            (RuleCode::new(Prefix::Cnf, 6), "CNF-6"),
+            (RuleCode::new(Prefix::Lex, 1), "LEX-1"),
+            (RuleCode::new(Prefix::Lex, 23), "LEX-23"),
+        ];
+
+        for (code, expected) in cases {
+            assert_eq!(code.to_string(), expected, "{code:?}");
+        }
+    }
+
+    #[test]
+    fn rule_code_can_be_a_constant() {
+        assert_eq!(INVALID_UTF8.to_string(), "LEX-1");
+        assert_eq!(INVALID_UTF8.prefix(), &Prefix::Lex);
+        assert_eq!(INVALID_UTF8.number(), 1);
+    }
+
+    #[test]
+    fn minimal_diagnostic_has_no_optional_element() {
+        let file = add_file("let \u{FFFD} = 1\n");
+        let diagnostic = Diagnostic::new(
+            INVALID_UTF8,
+            "source file is not valid UTF-8",
+            Primary::span(Span::new(file, 4, 7), None),
+        );
+
+        assert_eq!(diagnostic.code(), &RuleCode::new(Prefix::Lex, 1));
+        assert_eq!(diagnostic.title(), "source file is not valid UTF-8");
+        assert_eq!(
+            diagnostic.primary(),
+            &Primary::Span {
+                span: Span::new(file, 4, 7),
+                message: None,
+            }
+        );
+        assert_eq!(diagnostic.labels(), &Vec::new());
+        assert_eq!(diagnostic.reason(), None);
+        assert_eq!(diagnostic.help(), None);
+        assert_eq!(diagnostic.fix(), None);
+    }
+
+    #[test]
+    fn every_added_element_is_read_back() {
+        let file = add_file("if a && b {\n}\n");
+        let diagnostic = Diagnostic::new(
+            REFUSED_TOKEN,
+            "`&&` is not an operator",
+            Primary::span(Span::new(file, 5, 7), Some(String::from("use `and`"))),
+        )
+        .with_label(Label::new(Span::new(file, 3, 9), "in this condition"))
+        .with_reason("logical operators are written as words")
+        .with_help("write `and` instead of `&&`")
+        .with_fix(Fix::new(Span::new(file, 5, 7), String::from("and")));
+
+        assert_eq!(diagnostic.code(), &RuleCode::new(Prefix::Lex, 23));
+        assert_eq!(diagnostic.title(), "`&&` is not an operator");
+        assert_eq!(
+            diagnostic.primary(),
+            &Primary::Span {
+                span: Span::new(file, 5, 7),
+                message: Some(String::from("use `and`")),
+            }
+        );
+        assert_eq!(
+            diagnostic.labels(),
+            &[Label {
+                span: Span::new(file, 3, 9),
+                message: String::from("in this condition"),
+            }]
+        );
+        assert_eq!(
+            diagnostic.reason(),
+            Some(&String::from("logical operators are written as words"))
+        );
+        assert_eq!(
+            diagnostic.help(),
+            Some(&String::from("write `and` instead of `&&`"))
+        );
+        assert_eq!(
+            diagnostic.fix(),
+            Some(&Fix {
+                span: Span::new(file, 5, 7),
+                replacement: String::from("and"),
+            })
+        );
+    }
+
+    #[test]
+    fn labels_are_read_back_in_the_order_they_were_added() {
+        let file = add_file("if a && b {\n}\n");
+        let diagnostic = Diagnostic::new(
+            REFUSED_TOKEN,
+            "`&&` is not an operator",
+            Primary::span(Span::new(file, 5, 7), None),
+        )
+        .with_label(Label::new(Span::new(file, 8, 9), "added first"))
+        .with_label(Label::new(Span::new(file, 3, 4), "added second"))
+        .with_label(Label::new(Span::new(file, 0, 2), "added third"));
+
+        assert_eq!(
+            diagnostic.labels(),
+            &[
+                Label {
+                    span: Span::new(file, 8, 9),
+                    message: String::from("added first"),
+                },
+                Label {
+                    span: Span::new(file, 3, 4),
+                    message: String::from("added second"),
+                },
+                Label {
+                    span: Span::new(file, 0, 2),
+                    message: String::from("added third"),
+                },
+            ]
+        );
+    }
+
+    #[test]
+    fn primary_location_can_be_a_whole_file() {
+        let file = add_file("");
+        let diagnostic = Diagnostic::new(
+            RuleCode::new(Prefix::Cnf, 6),
+            "source file is too large",
+            Primary::file(file),
+        );
+
+        assert_eq!(diagnostic.primary(), &Primary::File { file });
+    }
+
+    #[test]
+    fn fix_replacement_may_cover_several_lines() {
+        let span = Span::new(add_file("a; b\n"), 1, 3);
+        let fix = Fix::new(span, String::from("\n"));
+
+        assert_eq!(fix.span(), &span);
+        assert_eq!(fix.replacement(), "\n");
+    }
+
+    #[test]
+    #[should_panic(expected = "expected one line of text, got: two\nlines")]
+    fn refuses_a_title_on_two_lines() {
+        let _ = Diagnostic::new(INVALID_UTF8, "two\nlines", Primary::file(add_file("")));
+    }
+
+    #[test]
+    #[should_panic(expected = "expected one line of text, got: two\nlines")]
+    fn refuses_a_primary_message_on_two_lines() {
+        let span = Span::new(add_file("if a && b {\n}\n"), 5, 7);
+        Primary::span(span, Some(String::from("two\nlines")));
+    }
+
+    #[test]
+    #[should_panic(expected = "expected one line of text, got: two\nlines")]
+    fn refuses_a_label_on_two_lines() {
+        let span = Span::new(add_file("if a && b {\n}\n"), 3, 4);
+        Label::new(span, "two\nlines");
+    }
+
+    #[test]
+    #[should_panic(expected = "expected one line of text, got: two\nlines")]
+    fn refuses_a_reason_on_two_lines() {
+        let diagnostic = Diagnostic::new(INVALID_UTF8, "title", Primary::file(add_file("")));
+        let _ = diagnostic.with_reason("two\nlines");
+    }
+
+    #[test]
+    #[should_panic(expected = "expected one line of text, got: two\nlines")]
+    fn refuses_a_help_on_two_lines() {
+        let diagnostic = Diagnostic::new(INVALID_UTF8, "title", Primary::file(add_file("")));
+        let _ = diagnostic.with_help("two\nlines");
+    }
+}
