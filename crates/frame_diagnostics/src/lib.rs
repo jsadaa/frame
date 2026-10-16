@@ -168,8 +168,11 @@ impl Primary {
     }
 
     /// Creates the primary location of `span`, with an optional message.
-    pub fn span(span: Span, message: Option<String>) -> Self {
-        Self::Span { span, message }
+    pub fn span(span: Span, message: Option<impl Into<String>>) -> Self {
+        Self::Span {
+            span,
+            message: message.map(|m| m.into()),
+        }
     }
 }
 
@@ -218,8 +221,11 @@ pub struct Fix {
 
 impl Fix {
     /// Creates the fix that replaces `span` with `replacement`.
-    pub fn new(span: Span, replacement: String) -> Self {
-        Self { span, replacement }
+    pub fn new(span: Span, replacement: impl Into<String>) -> Self {
+        Self {
+            span,
+            replacement: replacement.into(),
+        }
     }
 
     /// Returns the span to replace.
@@ -450,10 +456,12 @@ mod tests {
     #[test]
     fn minimal_diagnostic_has_no_optional_element() {
         let file = add_file("let \u{FFFD} = 1\n");
+        let message: Option<String> = None;
+
         let diagnostic = Diagnostic::new(
             INVALID_UTF8,
             "source file is not valid UTF-8",
-            Primary::span(Span::new(file, 4, 7), None),
+            Primary::span(Span::new(file, 4, 7), message.clone()),
         );
 
         assert_eq!(diagnostic.code(), RuleCode::new(Prefix::Lex, 1));
@@ -462,7 +470,7 @@ mod tests {
             diagnostic.primary(),
             &Primary::Span {
                 span: Span::new(file, 4, 7),
-                message: None,
+                message,
             }
         );
         assert_eq!(diagnostic.labels(), &Vec::new());
@@ -517,10 +525,12 @@ mod tests {
     #[test]
     fn labels_are_read_back_in_the_order_they_were_added() {
         let file = add_file("if a && b {\n}\n");
+        let message: Option<String> = None;
+
         let diagnostic = Diagnostic::new(
             REFUSED_TOKEN,
             "`&&` is not an operator",
-            Primary::span(Span::new(file, 5, 7), None),
+            Primary::span(Span::new(file, 5, 7), message),
         )
         .with_label(Label::new(Span::new(file, 8, 9), "added first"))
         .with_label(Label::new(Span::new(file, 3, 4), "added second"))
