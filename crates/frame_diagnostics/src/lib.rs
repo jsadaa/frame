@@ -452,8 +452,6 @@ mod tests {
     #[test]
     fn minimal_diagnostic_has_no_optional_element() {
         let file = add_file("let \u{FFFD} = 1\n");
-        let message: Option<String> = None;
-
         let diagnostic = Diagnostic::new(
             INVALID_UTF8,
             "source file is not valid UTF-8",
@@ -521,8 +519,6 @@ mod tests {
     #[test]
     fn labels_are_read_back_in_the_order_they_were_added() {
         let file = add_file("if a && b {\n}\n");
-        let message: Option<String> = None;
-
         let diagnostic = Diagnostic::new(
             REFUSED_TOKEN,
             "`&&` is not an operator",
