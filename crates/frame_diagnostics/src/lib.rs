@@ -1,70 +1,75 @@
-//! The frame diagnostics module
+//! Diagnostics: how the compiler reports a refused program, as data (DIA-1).
+//!
+//! A [`Diagnostic`] names the violated rule by its [`RuleCode`], such as `MUT-4`, and says
+//! where and why the program is refused. It has no severity: every diagnostic is an error
+//! (DIA-2).
 
 use frame_source::{FileId, Span};
 use std::fmt::Display;
 
+/// The prefix of a rule code, which names the area of the specification the rule belongs
+/// to; written in capitals, such as `MUT`.
 #[derive(Debug, PartialEq, Eq, Clone, Copy)]
-/// The prefix of a rule
 pub enum Prefix {
-    /// CNF: todo
+    /// Conformance.
     Cnf,
-    /// LEX: todo
+    /// Lexical structure.
     Lex,
-    /// SYN: todo
+    /// Syntax.
     Syn,
-    /// NAME: todo
+    /// Names, scopes and visibility.
     Nam,
-    /// MOD: todo
+    /// Modules and imports.
     Mod,
-    /// TYP: todo
+    /// Types.
     Typ,
-    /// INF: todo
+    /// Local inference.
     Inf,
-    /// VAL: todo
+    /// Values and places.
     Val,
-    /// MUT: todo
+    /// Mutation and exclusivity.
     Mut,
-    /// EXP: todo
+    /// Expressions.
     Exp,
-    /// STM: todo
+    /// Statements.
     Stm,
-    /// PAT: todo
+    /// Patterns.
     Pat,
-    /// FUN: todo
+    /// Functions.
     Fun,
-    /// ERR: todo
+    /// Failures, absence and panics.
     Err,
-    /// CON: todo
+    /// Contracts.
     Con,
-    /// IFC: todo
+    /// Interfaces.
     Ifc,
-    /// CAP: todo
+    /// Capabilities.
     Cap,
-    /// RES: todo
+    /// Resources.
     Res,
-    /// CLO: todo
+    /// Closures.
     Clo,
-    /// COL: todo
+    /// Collections.
     Col,
-    /// TXT: todo
+    /// Text and formatting.
     Txt,
-    /// PKG: todo
+    /// Packages and manifest.
     Pkg,
-    /// SCR: todo
+    /// Scripts.
     Scr,
-    /// TST: todo
+    /// Tests.
     Tst,
-    /// RUN: todo
+    /// Running a program.
     Run,
-    /// STD: todo
+    /// Standard library.
     Std,
-    /// CLI: todo
+    /// The `frame` command.
     Cli,
-    /// DIA: todo
+    /// Diagnostics.
     Dia,
-    /// FMT: todo
+    /// The formatter.
     Fmt,
-    /// IMP: todo
+    /// The reference implementation.
     Imp,
 }
 
@@ -107,25 +112,26 @@ impl Display for Prefix {
     }
 }
 
+/// The code of a rule of the specification, such as `MUT-4`: a prefix and a number.
 #[derive(Debug, PartialEq, Eq, Clone, Copy)]
-/// A rule code of frame, a prefix and a number
 pub struct RuleCode {
     prefix: Prefix,
     number: u32,
 }
 
 impl RuleCode {
-    /// Creates a new rule code
-    pub fn new(prefix: Prefix, number: u32) -> Self {
+    /// Creates the code `prefix-number`; a `const fn`, so that a rule's code can be a
+    /// constant.
+    pub const fn new(prefix: Prefix, number: u32) -> Self {
         Self { prefix, number }
     }
 
-    /// Get the prefix of the rule
+    /// Returns the prefix.
     pub fn prefix(&self) -> &Prefix {
         &self.prefix
     }
 
-    /// Get the number of the rule
+    /// Returns the number.
     pub fn number(&self) -> u32 {
         self.number
     }
@@ -137,98 +143,105 @@ impl Display for RuleCode {
     }
 }
 
+/// The primary location of a diagnostic: the span in cause, which the rendering underlines
+/// with `^`, or a whole file.
 #[derive(Debug, PartialEq, Eq)]
-/// The primary location of a diagnostic, a whole file or a chunk of text in the source
 pub enum Primary {
-    /// The diagnostics concerns the whole file
+    /// A whole file, for an error that no line shows, such as a file too large (CNF-6).
     File {
-        /// The file id
-        source: FileId,
+        /// The file.
+        file: FileId,
     },
-    /// The diagnostic concerns a chunk of the file
-    Chunk {
-        /// The span of the chunk in the source
+    /// A span of the text.
+    Span {
+        /// The text in cause.
         span: Span,
-        /// The wording of this location
-        wording: Option<String>,
+        /// The message written after the `^`, on one line.
+        message: Option<String>,
     },
 }
 
 impl Primary {
-    /// Create a primary location concerning a whole file
-    pub fn file(source: FileId) -> Self {
-        Self::File { source }
+    /// Creates the primary location of a whole file.
+    pub fn file(file: FileId) -> Self {
+        Self::File { file }
     }
 
-    /// Create a primary location concerning a chunk of the source
+    /// Creates the primary location of `span`, with an optional message.
     ///
     /// # Panics
     ///
-    /// Panics if the wording does not fit on one line
-    pub fn chunk(span: Span, wording: Option<String>) -> Self {
-        if let Some(wording) = wording.clone() {
+    /// Panics if `message` does not fit on one line.
+    pub fn span(span: Span, message: Option<String>) -> Self {
+        if let Some(message) = message.clone() {
             assert!(
-                text_fits_on_one_line(&wording),
-                "expected one line of text, got: {wording}"
+                text_fits_on_one_line(&message),
+                "expected one line of text, got: {message}"
             );
         }
 
-        Self::Chunk { span, wording }
+        Self::Span { span, message }
     }
 }
 
+/// A secondary label: another span that explains the error, which the rendering underlines
+/// with `-`, and its message.
 #[derive(Debug, PartialEq, Eq)]
-/// A secondary location for the diagnostic
 pub struct Label {
     span: Span,
-    wording: String,
+    message: String,
 }
 
 impl Label {
-    /// Create a new label
+    /// Creates the label of `span`.
     ///
     /// # Panics
     ///
-    /// Panics if the wording does not fit on one line
-    pub fn new(span: Span, wording: impl Into<String>) -> Self {
-        let wording = wording.into();
+    /// Panics if `message` does not fit on one line.
+    pub fn new(span: Span, message: impl Into<String>) -> Self {
+        let message = message.into();
 
         assert!(
-            text_fits_on_one_line(&wording),
-            "expected one line of text, got: {wording}"
+            text_fits_on_one_line(&message),
+            "expected one line of text, got: {message}"
         );
 
-        Self { span, wording }
+        Self { span, message }
     }
 }
 
+/// An automatic fix: the text that replaces a span (DIA-1).
 #[derive(Debug, PartialEq, Eq)]
-/// The fix as proposed by the compiler
 pub struct Fix {
     span: Span,
     replacement: String,
 }
 
 impl Fix {
-    /// Create a new fix
+    /// Creates the fix that replaces `span` with `replacement`.
     pub fn new(span: Span, replacement: String) -> Self {
         Self { span, replacement }
     }
 
-    /// the span of the fix
+    /// Returns the span to replace.
     pub fn span(&self) -> &Span {
         &self.span
     }
 
-    /// The text that replace the span
+    /// Returns the text that replaces the span; unlike the other texts of a diagnostic, it
+    /// may cover several lines.
     pub fn replacement(&self) -> &str {
         &self.replacement
     }
 }
 
+/// An error of the compiler: the violated rule, a title, where, and why (DIA-1).
+///
+/// [`Diagnostic::new`] takes what every diagnostic has; the `with_` methods add the rest, in
+/// the same expression.
 #[derive(Debug, PartialEq, Eq)]
+// Built, then dropped, a diagnostic is an error that the user never sees.
 #[must_use]
-/// A diagnostics issued by the compiler
 pub struct Diagnostic {
     code: RuleCode,
     title: String,
@@ -240,11 +253,11 @@ pub struct Diagnostic {
 }
 
 impl Diagnostic {
-    /// Create a new diagnostic from a rule code and a location
+    /// Creates a diagnostic of the rule `code`, titled `title`, at `primary`.
     ///
     /// # Panics
     ///
-    /// Panics if the title does not fit on one line
+    /// Panics if `title` does not fit on one line.
     pub fn new(code: RuleCode, title: impl Into<String>, primary: Primary) -> Self {
         let title = title.into();
 
@@ -264,17 +277,17 @@ impl Diagnostic {
         }
     }
 
-    /// Add a secondary label to the diagnostic
+    /// Adds a secondary label, after those already added.
     pub fn with_label(mut self, label: Label) -> Self {
         self.labels.push(label);
         self
     }
 
-    /// Add a reason to the diagnostic
+    /// Sets the reason: why the rule refuses the program.
     ///
     /// # Panics
     ///
-    /// Panics if the reason does not fit on one line
+    /// Panics if `reason` does not fit on one line.
     pub fn with_reason(mut self, reason: impl Into<String>) -> Self {
         let reason = reason.into();
 
@@ -287,11 +300,11 @@ impl Diagnostic {
         self
     }
 
-    /// Add an help to the diagnostic
+    /// Sets the help: a concrete correction, such as the text to write.
     ///
     /// # Panics
     ///
-    /// Panics if the help does not fit on one line
+    /// Panics if `help` does not fit on one line.
     pub fn with_help(mut self, help: impl Into<String>) -> Self {
         let help = help.into();
 
@@ -304,49 +317,49 @@ impl Diagnostic {
         self
     }
 
-    /// Add a fix to the diagnostic
+    /// Sets the automatic fix; a diagnostic has one at most.
     pub fn with_fix(mut self, fix: Fix) -> Self {
         self.fix = Some(fix);
         self
     }
 
-    /// The rule code of the diagnostic
+    /// Returns the code of the violated rule.
     pub fn code(&self) -> &RuleCode {
         &self.code
     }
 
-    /// The title of the diagnostic
+    /// Returns the title.
     pub fn title(&self) -> String {
         self.title.clone()
     }
 
-    /// The pimary location of the diagnostic
+    /// Returns the primary location.
     pub fn primary(&self) -> &Primary {
         &self.primary
     }
 
-    /// The secondary labels of the diagnostic
+    /// Returns the secondary labels, in the order they were added.
     pub fn labels(&self) -> &Vec<Label> {
         &self.labels
     }
 
-    /// The reason of the diagnostic
+    /// Returns the reason, if any.
     pub fn reason(&self) -> Option<&String> {
         self.reason.as_ref()
     }
 
-    /// The help pf the diagnostic
+    /// Returns the help, if any.
     pub fn help(&self) -> Option<&String> {
         self.help.as_ref()
     }
 
-    /// The fix of the diagnostic
+    /// Returns the automatic fix, if any.
     pub fn fix(&self) -> Option<&Fix> {
         self.fix.as_ref()
     }
 }
 
-/// Check if the text fits on one line : only one `\n` or less, and nothing after if present
+/// Returns `true` if `text` fits on one line: at most one `\n`, at its end.
 fn text_fits_on_one_line(text: &str) -> bool {
     if let Some(position) = text.find("\n")
         && text.get(position + 1..).is_some()
