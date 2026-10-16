@@ -568,8 +568,14 @@ mod tests {
     #[test]
     #[should_panic(expected = "expected one line of text, got: two\nlines")]
     fn refuses_a_primary_message_on_two_lines() {
-        let span = Span::new(add_file("if a && b {\n}\n"), 5, 7);
-        Primary::span(span, Some(String::from("two\nlines")));
+        let _ = Diagnostic::new(
+            RuleCode::new(Prefix::Cnf, 6),
+            "title",
+            Primary::Span {
+                span: Span::new(add_file("if a && b {\n}\n"), 5, 7),
+                message: Some(String::from("two\nlines")),
+            },
+        );
     }
 
     #[test]
