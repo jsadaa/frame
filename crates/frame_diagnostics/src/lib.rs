@@ -127,8 +127,8 @@ impl RuleCode {
     }
 
     /// Returns the prefix.
-    pub fn prefix(&self) -> &Prefix {
-        &self.prefix
+    pub fn prefix(&self) -> Prefix {
+        self.prefix
     }
 
     /// Returns the number.
@@ -223,8 +223,8 @@ impl Fix {
     }
 
     /// Returns the span to replace.
-    pub fn span(&self) -> &Span {
-        &self.span
+    pub fn span(&self) -> Span {
+        self.span
     }
 
     /// Returns the text that replaces the span; unlike the other texts of a diagnostic, it
@@ -334,13 +334,13 @@ impl Diagnostic {
     }
 
     /// Returns the code of the violated rule.
-    pub fn code(&self) -> &RuleCode {
-        &self.code
+    pub fn code(&self) -> RuleCode {
+        self.code
     }
 
     /// Returns the title.
-    pub fn title(&self) -> String {
-        self.title.clone()
+    pub fn title(&self) -> &str {
+        &self.title
     }
 
     /// Returns the primary location.
@@ -349,18 +349,18 @@ impl Diagnostic {
     }
 
     /// Returns the secondary labels, in the order they were added.
-    pub fn labels(&self) -> &Vec<Label> {
+    pub fn labels(&self) -> &[Label] {
         &self.labels
     }
 
     /// Returns the reason, if any.
-    pub fn reason(&self) -> Option<&String> {
-        self.reason.as_ref()
+    pub fn reason(&self) -> Option<&str> {
+        self.reason.as_deref()
     }
 
     /// Returns the help, if any.
-    pub fn help(&self) -> Option<&String> {
-        self.help.as_ref()
+    pub fn help(&self) -> Option<&str> {
+        self.help.as_deref()
     }
 
     /// Returns the automatic fix, if any.
@@ -443,7 +443,7 @@ mod tests {
     #[test]
     fn rule_code_can_be_a_constant() {
         assert_eq!(INVALID_UTF8.to_string(), "LEX-1");
-        assert_eq!(INVALID_UTF8.prefix(), &Prefix::Lex);
+        assert_eq!(INVALID_UTF8.prefix(), Prefix::Lex);
         assert_eq!(INVALID_UTF8.number(), 1);
     }
 
@@ -456,7 +456,7 @@ mod tests {
             Primary::span(Span::new(file, 4, 7), None),
         );
 
-        assert_eq!(diagnostic.code(), &RuleCode::new(Prefix::Lex, 1));
+        assert_eq!(diagnostic.code(), RuleCode::new(Prefix::Lex, 1));
         assert_eq!(diagnostic.title(), "source file is not valid UTF-8");
         assert_eq!(
             diagnostic.primary(),
@@ -484,7 +484,7 @@ mod tests {
         .with_help("write `and` instead of `&&`")
         .with_fix(Fix::new(Span::new(file, 5, 7), String::from("and")));
 
-        assert_eq!(diagnostic.code(), &RuleCode::new(Prefix::Lex, 23));
+        assert_eq!(diagnostic.code(), RuleCode::new(Prefix::Lex, 23));
         assert_eq!(diagnostic.title(), "`&&` is not an operator");
         assert_eq!(
             diagnostic.primary(),
@@ -502,12 +502,9 @@ mod tests {
         );
         assert_eq!(
             diagnostic.reason(),
-            Some(&String::from("logical operators are written as words"))
+            Some("logical operators are written as words")
         );
-        assert_eq!(
-            diagnostic.help(),
-            Some(&String::from("write `and` instead of `&&`"))
-        );
+        assert_eq!(diagnostic.help(), Some("write `and` instead of `&&`"));
         assert_eq!(
             diagnostic.fix(),
             Some(&Fix {
@@ -565,7 +562,7 @@ mod tests {
         let span = Span::new(add_file("a; b\n"), 1, 3);
         let fix = Fix::new(span, String::from("\n"));
 
-        assert_eq!(fix.span(), &span);
+        assert_eq!(fix.span(), span);
         assert_eq!(fix.replacement(), "\n");
     }
 
