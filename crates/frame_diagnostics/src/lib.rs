@@ -197,6 +197,16 @@ impl Label {
 
         Self { span, message }
     }
+
+    /// Returns the span of the secondary label.
+    pub fn span(&self) -> &Span {
+        &self.span
+    }
+
+    /// Returns the message of the label
+    pub fn message(&self) -> &str {
+        &self.message
+    }
 }
 
 /// An automatic fix: the text that replaces a span (DIA-1).
