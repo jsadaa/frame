@@ -486,7 +486,7 @@ mod tests {
         .with_label(Label::new(Span::new(file, 3, 9), "in this condition"))
         .with_reason("logical operators are written as words")
         .with_help("write `and` instead of `&&`")
-        .with_fix(Fix::new(Span::new(file, 5, 7), String::from("and")));
+        .with_fix(Fix::new(Span::new(file, 5, 7), "and"));
 
         assert_eq!(diagnostic.code(), RuleCode::new(Prefix::Lex, 23));
         assert_eq!(diagnostic.title(), "`&&` is not an operator");
@@ -566,7 +566,7 @@ mod tests {
     #[test]
     fn fix_replacement_may_cover_several_lines() {
         let span = Span::new(add_file("a; b\n"), 1, 3);
-        let fix = Fix::new(span, String::from("\n"));
+        let fix = Fix::new(span, "\n");
 
         assert_eq!(fix.span(), span);
         assert_eq!(fix.replacement(), "\n");
