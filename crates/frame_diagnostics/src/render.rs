@@ -44,19 +44,16 @@ fn render_span_level_diagnostic(
     message: Option<&str>,
 ) -> String {
     let line_col = file.line_col(span.start());
-    let line_text = sanitize_source(file.line_text(line_col.line()));
-    let margin_width = line_col.line().to_string().len() + 1;
+    let line_number = line_col.line();
+    let line_text = sanitize_source(file.line_text(line_number));
+    let margin_width = line_number.to_string().len() + 1;
     let invalid_start_offset = line_col.column() - 1;
 
     let mut render = vec![
         title_line(diagnostic),
         location_line(&format!("{}", file.location(span.start())), margin_width),
         separator(margin_width),
-        source_line(
-            &format!(" {}", line_text),
-            &format!("{}", line_col.line()),
-            margin_width,
-        ),
+        source_line(&line_text, line_number, margin_width),
         source_sub_line(span, margin_width, invalid_start_offset, message),
         separator(margin_width),
     ];
