@@ -58,7 +58,7 @@ fn render_span_level_diagnostic(
                 margin_width,
             ))
             .as_deref(),
-            Some(target_line(
+            Some(source_sub_line(
                 &line_text,
                 span,
                 margin_width,
@@ -92,7 +92,7 @@ fn source_prefix(margin_text: &str, margin_width: usize) -> String {
     format!("{margin_text:<margin_width$}")
 }
 
-fn target_line(
+fn source_sub_line(
     line_text: &str,
     span: &Span,
     margin_width: usize,
@@ -104,7 +104,7 @@ fn target_line(
         .expect("at this stage, we know the column is in the line text range")
         .len();
 
-    let mut target_line = format!(
+    let mut source_line = format!(
         "{}| {}{}",
         " ".repeat(margin_width),
         " ".repeat(underline_start),
@@ -112,10 +112,10 @@ fn target_line(
     );
 
     if let Some(message) = message {
-        target_line.push_str(&format!(" {}", message));
+        source_line.push_str(&format!(" {}", message));
     }
 
-    target_line
+    source_line
 }
 
 fn separator(margin_width: usize) -> String {
@@ -158,4 +158,41 @@ fn sanitize_source(source: &str) -> String {
             },
             &char::REPLACEMENT_CHARACTER.to_string(),
         )
+}
+
+#[cfg(test)]
+mod tests {
+    use crate::{Diagnostic, Prefix, Primary, RuleCode, render};
+    use frame_source::{SourceMap, Span};
+
+    #[test]
+    fn check_span() {
+        let mut source_map = SourceMap::new();
+        let file = source_map.add(String::from("src/invalid.fm"), String::from("let �� = 2\nlet �� = 2\nlet �� = 2\nlet �� = 2\nlet �� = 2\nlet �� = 2\nlet �� = 2\nlet �� = 2\nlet �� = 2\nlet �� = 2\nlet �� = 2\n"));
+        let diagnostic = Diagnostic::new(
+            RuleCode::new(Prefix::Lex, 1),
+            "invalid utf-8",
+            Primary::span_with_message(Span::new(file, 139, 141), "this character is invalid"),
+        )
+        .with_reason("the source file contains non-unicode data")
+        .with_help("consider removing this character");
+        let render = render(&diagnostic, &source_map);
+        println!("{render}");
+        assert_eq!("", render);
+    }
+
+    #[test]
+    fn check_file() {
+        let mut source_map = SourceMap::new();
+        let file = source_map.add(String::from("src/invalid.fm"), String::from("let � = 2\n"));
+        let diagnostic = Diagnostic::new(
+            RuleCode::new(Prefix::Lex, 1),
+            "invalid utf-8",
+            Primary::file(file),
+        )
+        .with_reason("the source file contains non-unicode data");
+        let render = render(&diagnostic, &source_map);
+        println!("{render}");
+        assert_eq!("", render);
+    }
 }
