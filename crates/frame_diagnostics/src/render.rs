@@ -34,12 +34,7 @@ fn render_file_level_diagnostic(file: &SourceFile, diagnostic: &Diagnostic) -> S
         render.push(help);
     }
 
-    text_from_lines(
-        &render
-            .iter()
-            .map(|line| line.deref())
-            .collect::<Vec<&str>>(),
-    )
+    text_from_lines(&render.iter().map(String::deref).collect::<Vec<&str>>())
 }
 
 fn render_span_level_diagnostic(
@@ -74,12 +69,7 @@ fn render_span_level_diagnostic(
         render.push(help);
     }
 
-    text_from_lines(
-        &render
-            .iter()
-            .map(|line| line.deref())
-            .collect::<Vec<&str>>(),
-    )
+    text_from_lines(&render.iter().map(String::deref).collect::<Vec<&str>>())
 }
 
 fn title_line(diagnostic: &Diagnostic) -> String {
