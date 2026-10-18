@@ -145,4 +145,30 @@ fn sanitize_source(source: &str) -> String {
 }
 
 #[cfg(test)]
-mod tests {}
+mod tests {
+    use crate::{Diagnostic, Prefix, Primary, RuleCode, render};
+    use frame_source::{SourceMap, Span};
+
+    #[test]
+    fn example_from_notions() {
+        let expected = "error[LEX-23]: `&&` is not an operator
+ --> demo.fm:3:6
+  |
+3 | if a && b {
+  |      ^^ use `and`
+  |
+  = help: write `and` instead of `&&`
+";
+
+        let mut source_map = SourceMap::new();
+        let file = source_map.add(String::from("demo.fm"), String::from("\n\nif a && b {\n"));
+        let diagnostic = Diagnostic::new(
+            RuleCode::new(Prefix::Lex, 23),
+            "`&&` is not an operator",
+            Primary::span_with_message(Span::new(file, 7, 9), String::from("use `and`")),
+        )
+        .with_help("write `and` instead of `&&`");
+
+        assert_eq!(render(&diagnostic, &source_map), expected);
+    }
+}
