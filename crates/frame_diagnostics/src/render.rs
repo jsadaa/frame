@@ -125,7 +125,7 @@ fn text_from_lines(lines: &[&str]) -> String {
 
 fn sanitize_source(source: &str) -> String {
     source
-        .replace("\t", &" ".repeat(4))
+        .replace('\t', &" ".repeat(4))
         .replace(
             |c: char| c.is_control(),
             &char::REPLACEMENT_CHARACTER.to_string(),
