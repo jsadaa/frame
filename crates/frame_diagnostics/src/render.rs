@@ -1,5 +1,6 @@
 //! The diagnostic render module
 
+use std::fmt::Write;
 use std::ops::Deref;
 
 use super::{Diagnostic, Primary};
@@ -95,7 +96,7 @@ fn source_sub_line(
     );
 
     if let Some(message) = message {
-        source_line.push_str(&format!(" {}", message));
+        let _ = write!(source_line, " {message}");
     }
 
     source_line
