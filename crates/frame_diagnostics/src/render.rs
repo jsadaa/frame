@@ -59,11 +59,11 @@ fn render_span_level_diagnostic(
         separator(margin_width),
     ];
 
-    if let Some(reason) = reason_line(diagnostic.reason(), 1) {
+    if let Some(reason) = reason_line(diagnostic.reason(), margin_width) {
         render.push(reason);
     }
 
-    if let Some(help) = help_line(diagnostic.help(), 1) {
+    if let Some(help) = help_line(diagnostic.help(), margin_width) {
         render.push(help);
     }
 
