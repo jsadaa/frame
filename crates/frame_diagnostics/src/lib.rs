@@ -4,7 +4,10 @@
 //! where and why the program is refused. It has no severity: every diagnostic is an error
 //! (DIA-2).
 
+mod render;
+
 use frame_source::{FileId, Span};
+pub use render::render;
 use std::fmt;
 
 /// The prefix of a rule code, which names the area of the specification the rule belongs
