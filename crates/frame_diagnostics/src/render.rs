@@ -5,14 +5,13 @@ use frame_source::{SourceFile, SourceMap, Span};
 
 /// Render the diagnostic
 pub fn render(diagnostic: &Diagnostic, source_map: &SourceMap) -> String {
-    let file = source_map.file(match diagnostic.primary() {
-        Primary::File { file } => *file,
-        Primary::Span { span, .. } => span.file(),
-    });
-
     match diagnostic.primary() {
-        Primary::File { .. } => render_file_level_diagnostic(file, diagnostic),
+        Primary::File { file } => {
+            let file = source_map.file(*file);
+            render_file_level_diagnostic(file, diagnostic)
+        }
         Primary::Span { span, message } => {
+            let file = source_map.file(span.file());
             render_span_level_diagnostic(file, diagnostic, span, message.as_deref())
         }
     }
