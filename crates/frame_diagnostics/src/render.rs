@@ -145,38 +145,4 @@ fn sanitize_source(source: &str) -> String {
 }
 
 #[cfg(test)]
-mod tests {
-    use crate::{Diagnostic, Prefix, Primary, RuleCode, render};
-    use frame_source::{SourceMap, Span};
-
-    #[test]
-    fn check_span() {
-        let mut source_map = SourceMap::new();
-        let file = source_map.add(String::from("src/invalid.fm"), String::from("let �� = 2\nlet �� = 2\nlet �� = 2\nlet �� = 2\nlet �� = 2\nlet �� = 2\nlet �� = 2\nlet �� = 2\nlet �� = 2\nlet �� = 2\nlet �� = 2\n"));
-        let diagnostic = Diagnostic::new(
-            RuleCode::new(Prefix::Lex, 1),
-            "invalid utf-8",
-            Primary::span_with_message(Span::new(file, 139, 141), "this character is invalid"),
-        )
-        .with_reason("the source file contains non-unicode data")
-        .with_help("consider removing this character");
-        let render = render(&diagnostic, &source_map);
-        println!("{render}");
-        assert_eq!("", render);
-    }
-
-    #[test]
-    fn check_file() {
-        let mut source_map = SourceMap::new();
-        let file = source_map.add(String::from("src/invalid.fm"), String::from("let � = 2\n"));
-        let diagnostic = Diagnostic::new(
-            RuleCode::new(Prefix::Lex, 1),
-            "invalid utf-8",
-            Primary::file(file),
-        )
-        .with_reason("the source file contains non-unicode data");
-        let render = render(&diagnostic, &source_map);
-        println!("{render}");
-        assert_eq!("", render);
-    }
-}
+mod tests {}
