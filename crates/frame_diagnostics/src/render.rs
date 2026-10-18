@@ -41,7 +41,7 @@ fn render_span_level_diagnostic(
     let line_col = file.line_col(span.start());
     let line_text = sanitize_source(file.line_text(line_col.line()));
     let margin_width = line_col.line().to_string().len() + 1;
-    let underline_start = line_col.column() - 1;
+    let invalid_start_offset = line_col.column() - 1;
 
     text_from_lines(
         &[
@@ -59,10 +59,9 @@ fn render_span_level_diagnostic(
             ))
             .as_deref(),
             Some(source_sub_line(
-                &line_text,
                 span,
                 margin_width,
-                underline_start,
+                invalid_start_offset,
                 message,
             ))
             .as_deref(),
@@ -93,21 +92,15 @@ fn source_prefix(margin_text: &str, margin_width: usize) -> String {
 }
 
 fn source_sub_line(
-    line_text: &str,
     span: &Span,
     margin_width: usize,
     start_offset: u32,
     message: Option<&str>,
 ) -> String {
-    let underline_start = line_text
-        .get(..start_offset as usize)
-        .expect("at this stage, we know the column is in the line text range")
-        .len();
-
     let mut source_line = format!(
         "{}| {}{}",
         " ".repeat(margin_width),
-        " ".repeat(underline_start),
+        " ".repeat(start_offset as usize),
         "^".repeat(span.len() as usize)
     );
 
