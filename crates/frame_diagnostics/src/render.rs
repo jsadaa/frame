@@ -75,7 +75,7 @@ fn title_line(diagnostic: &Diagnostic) -> String {
 }
 
 fn location_line(location: &str, margin_width: usize) -> String {
-    format!("{}-> {location}", " ".repeat(margin_width))
+    format!("{}--> {location}", " ".repeat(margin_width - 1))
 }
 
 fn source_line(line_text: &str, line_number: u32, margin_width: usize) -> String {
