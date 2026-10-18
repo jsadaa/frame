@@ -1,5 +1,7 @@
 //! The diagnostic render module
 
+use std::ops::Deref;
+
 use super::{Diagnostic, Primary};
 use frame_source::{SourceFile, SourceMap, Span};
 
@@ -18,17 +20,25 @@ pub fn render(diagnostic: &Diagnostic, source_map: &SourceMap) -> String {
 }
 
 fn render_file_level_diagnostic(file: &SourceFile, diagnostic: &Diagnostic) -> String {
+    let mut render = vec![
+        title_line(diagnostic),
+        location_line(file.name(), 1),
+        separator(1),
+    ];
+
+    if let Some(reason) = reason_line(diagnostic.reason(), 1) {
+        render.push(reason);
+    }
+
+    if let Some(help) = help_line(diagnostic.help(), 1) {
+        render.push(help);
+    }
+
     text_from_lines(
-        &[
-            Some(title_line(diagnostic)).as_deref(),
-            Some(location_line(file.name(), 1)).as_deref(),
-            Some(separator(1)).as_deref(),
-            reason_line(diagnostic.reason(), 1).as_deref(),
-            help_line(diagnostic.help(), 1).as_deref(),
-        ]
-        .into_iter()
-        .flatten()
-        .collect::<Vec<&str>>(),
+        &render
+            .iter()
+            .map(|line| line.deref())
+            .collect::<Vec<&str>>(),
     )
 }
 
@@ -43,35 +53,32 @@ fn render_span_level_diagnostic(
     let margin_width = line_col.line().to_string().len() + 1;
     let invalid_start_offset = line_col.column() - 1;
 
+    let mut render = vec![
+        title_line(diagnostic),
+        location_line(&format!("{}", file.location(span.start())), margin_width),
+        separator(margin_width),
+        source_line(
+            &format!(" {}", line_text),
+            &format!("{}", line_col.line()),
+            margin_width,
+        ),
+        source_sub_line(span, margin_width, invalid_start_offset, message),
+        separator(margin_width),
+    ];
+
+    if let Some(reason) = reason_line(diagnostic.reason(), 1) {
+        render.push(reason);
+    }
+
+    if let Some(help) = help_line(diagnostic.help(), 1) {
+        render.push(help);
+    }
+
     text_from_lines(
-        &[
-            Some(title_line(diagnostic)).as_deref(),
-            Some(location_line(
-                &format!("{}", file.location(span.start())),
-                margin_width,
-            ))
-            .as_deref(),
-            Some(separator(margin_width)).as_deref(),
-            Some(source_line(
-                &format!(" {}", line_text),
-                &format!("{}", line_col.line()),
-                margin_width,
-            ))
-            .as_deref(),
-            Some(source_sub_line(
-                span,
-                margin_width,
-                invalid_start_offset,
-                message,
-            ))
-            .as_deref(),
-            Some(separator(margin_width)).as_deref(),
-            reason_line(diagnostic.reason(), margin_width).as_deref(),
-            help_line(diagnostic.help(), margin_width).as_deref(),
-        ]
-        .into_iter()
-        .flatten()
-        .collect::<Vec<&str>>(),
+        &render
+            .iter()
+            .map(|line| line.deref())
+            .collect::<Vec<&str>>(),
     )
 }
 
