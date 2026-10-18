@@ -77,12 +77,8 @@ fn location_line(location: &str, margin_width: usize) -> String {
     format!("{}-> {location}", " ".repeat(margin_width))
 }
 
-fn source_line(line_text: &str, margin_text: &str, margin_width: usize) -> String {
-    format!("{}|{line_text}", source_prefix(margin_text, margin_width))
-}
-
-fn source_prefix(margin_text: &str, margin_width: usize) -> String {
-    format!("{margin_text:<margin_width$}")
+fn source_line(line_text: &str, line_number: u32, margin_width: usize) -> String {
+    format!("{line_number:<margin_width$}| {line_text}")
 }
 
 fn source_sub_line(
