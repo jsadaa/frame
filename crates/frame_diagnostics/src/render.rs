@@ -48,7 +48,13 @@ fn render_span_level_diagnostic(
     let line_number = line_col.line();
     let line_text = sanitize_source(file.line_text(line_number));
     let margin_width = line_number.to_string().len() + 1;
-    let invalid_start_offset = line_col.column() - 1;
+    let underline_start = line_col.column() - 1;
+    let underline_end = (underline_start + span.len()) as usize;
+    let tab_extra_offset = line_text
+        .get(underline_start as usize..underline_end)
+        .expect("at this stage, we kow the span offset is in the line text range")
+        .matches(char::is_whitespace)
+        .count();
     let reason = reason_line(diagnostic.reason(), margin_width);
     let help = help_line(diagnostic.help(), margin_width);
 
@@ -57,7 +63,13 @@ fn render_span_level_diagnostic(
         location_line(&format!("{}", file.location(span.start())), margin_width),
         separator(margin_width),
         source_line(&line_text, line_number, margin_width),
-        source_sub_line(span, margin_width, invalid_start_offset, message),
+        source_sub_line(
+            span,
+            margin_width,
+            underline_start,
+            message,
+            tab_extra_offset,
+        ),
     ];
 
     if reason.is_some() || help.is_some() {
@@ -92,12 +104,13 @@ fn source_sub_line(
     margin_width: usize,
     start_offset: u32,
     message: Option<&str>,
+    tab_extra_offset: usize,
 ) -> String {
     let mut source_line = format!(
         "{}| {}{}",
         " ".repeat(margin_width),
         " ".repeat(start_offset as usize),
-        "^".repeat(span.len() as usize)
+        "^".repeat(span.len() as usize + tab_extra_offset)
     );
 
     if let Some(message) = message {
