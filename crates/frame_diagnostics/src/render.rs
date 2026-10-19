@@ -49,6 +49,8 @@ fn render_span_level_diagnostic(
     let line_text = sanitize_source(file.line_text(line_number));
     let margin_width = line_number.to_string().len() + 1;
     let invalid_start_offset = line_col.column() - 1;
+    let reason = reason_line(diagnostic.reason(), margin_width);
+    let help = help_line(diagnostic.help(), margin_width);
 
     let mut render = vec![
         title_line(diagnostic),
@@ -56,14 +58,17 @@ fn render_span_level_diagnostic(
         separator(margin_width),
         source_line(&line_text, line_number, margin_width),
         source_sub_line(span, margin_width, invalid_start_offset, message),
-        separator(margin_width),
     ];
 
-    if let Some(reason) = reason_line(diagnostic.reason(), margin_width) {
+    if reason.is_some() || help.is_some() {
+        render.push(separator(margin_width));
+    }
+
+    if let Some(reason) = reason {
         render.push(reason);
     }
 
-    if let Some(help) = help_line(diagnostic.help(), margin_width) {
+    if let Some(help) = help {
         render.push(help);
     }
 
