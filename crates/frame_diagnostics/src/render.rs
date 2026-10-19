@@ -155,7 +155,7 @@ mod tests {
     use frame_source::{SourceMap, Span};
 
     #[test]
-    fn example_from_notions() {
+    fn example_1_from_notions() {
         let expected = "error[LEX-23]: `&&` is not an operator
  --> demo.fm:3:6
   |
@@ -173,6 +173,32 @@ mod tests {
             Primary::span_with_message(Span::new(file, 7, 9), String::from("use `and`")),
         )
         .with_help("write `and` instead of `&&`");
+
+        assert_eq!(render(&diagnostic, &source_map), expected);
+    }
+
+    #[test]
+    fn example_2_from_notions() {
+        let expected = "error[NAM-9]: unknown name `totl`
+  --> src/main.fm:12:11
+   |
+12 |     print(totl)
+   |           ^^^^ not found in this scope
+";
+
+        let mut source_map = SourceMap::new();
+        let file = source_map.add(
+            String::from("src/main.fm"),
+            String::from("\n\n\n\n\n\n\n\n\n\n\n\tprint(totl)\n"),
+        );
+        let diagnostic = Diagnostic::new(
+            RuleCode::new(Prefix::Nam, 9),
+            "unknown name `totl`",
+            Primary::span_with_message(
+                Span::new(file, 21, 25),
+                String::from("not found in this scope"),
+            ),
+        );
 
         assert_eq!(render(&diagnostic, &source_map), expected);
     }
