@@ -44,17 +44,13 @@ fn render_span_level_diagnostic(
     span: &Span,
     message: Option<&str>,
 ) -> String {
-    let line_col = file.line_col(span.start());
-    let line_number = line_col.line();
-    let line_text = sanitize_source(file.line_text(line_number));
+    let line_number = file.line_col(span.start()).line();
+    let source_line_text = file.line_text(line_number);
+
     let margin_width = line_number.to_string().len() + 1;
-    let underline_start = line_col.column() - 1;
-    let underline_end = (underline_start + span.len()) as usize;
-    let tab_extra_offset = line_text
-        .get(underline_start as usize..underline_end)
-        .expect("at this stage, we kow the span offset is in the line text range")
-        .matches(char::is_whitespace)
-        .count();
+    let underline_start = file.line_col(span.start()).column() as usize - 1;
+    let underline_width = (file.line_col(span.end()).column() as usize - 1) - underline_start;
+
     let reason = reason_line(diagnostic.reason(), margin_width);
     let help = help_line(diagnostic.help(), margin_width);
 
@@ -62,13 +58,15 @@ fn render_span_level_diagnostic(
         title_line(diagnostic),
         location_line(&format!("{}", file.location(span.start())), margin_width),
         separator(margin_width),
-        source_line(&line_text, line_number, margin_width),
-        source_sub_line(
-            span,
+        source_line(
+            &sanitize_source(source_line_text),
+            line_number,
             margin_width,
-            underline_start,
+        ),
+        source_sub_line(
+            &underline_text(source_line_text, underline_start, underline_width),
             message,
-            tab_extra_offset,
+            margin_width,
         ),
     ];
 
@@ -99,25 +97,34 @@ fn source_line(line_text: &str, line_number: u32, margin_width: usize) -> String
     format!("{line_number:<margin_width$}| {line_text}")
 }
 
-fn source_sub_line(
-    span: &Span,
-    margin_width: usize,
-    start_offset: u32,
-    message: Option<&str>,
-    tab_extra_offset: usize,
-) -> String {
-    let mut source_line = format!(
-        "{}| {}{}",
-        " ".repeat(margin_width),
-        " ".repeat(start_offset as usize),
-        "^".repeat(span.len() as usize + tab_extra_offset)
-    );
+fn source_sub_line(line_text: &str, message: Option<&str>, margin_width: usize) -> String {
+    let mut source_line = format!("{}|{}", " ".repeat(margin_width), line_text);
 
     if let Some(message) = message {
         let _ = write!(source_line, " {message}");
     }
 
     source_line
+}
+
+fn underline_text(source_line_text: &str, start: usize, width: usize) -> String {
+    let before = source_line_text
+        .chars()
+        .take(start)
+        .collect::<String>()
+        .chars()
+        .count();
+    let inside = source_line_text
+        .chars()
+        .skip(start)
+        .take(width)
+        .collect::<String>()
+        .replace('\t', "    ")
+        .chars()
+        .count()
+        .max(1);
+
+    format!(" {}{}", " ".repeat(before), "^".repeat(inside))
 }
 
 fn separator(margin_width: usize) -> String {
