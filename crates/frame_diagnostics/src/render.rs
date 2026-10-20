@@ -44,27 +44,30 @@ fn render_span_level_diagnostic(
     span: &Span,
     message: Option<&str>,
 ) -> String {
-    let line_number = file.line_col(span.start()).line();
-    let source_line_text = file.line_text(line_number);
+    let start_line_col = file.line_col(span.start());
+    let end_line_col = file.line_col(span.end());
+
+    let line_number = start_line_col.line();
+    let line_text = file.line_text(line_number);
 
     let margin_width = line_number.to_string().len() + 1;
-    let underline_start = file.line_col(span.start()).column() as usize - 1;
-    let underline_width = (file.line_col(span.end()).column() as usize - 1) - underline_start;
+    let underline_start = start_line_col.column() as usize - 1;
+    let underline_width = if end_line_col.line() > start_line_col.line() {
+        line_text.chars().skip(underline_start).count()
+    } else {
+        (end_line_col.column() as usize - 1) - underline_start
+    };
 
     let reason = reason_line(diagnostic.reason(), margin_width);
     let help = help_line(diagnostic.help(), margin_width);
 
     let mut render = vec![
         title_line(diagnostic),
-        location_line(&format!("{}", file.location(span.start())), margin_width),
+        location_line(&file.location(span.start()).to_string(), margin_width),
         separator(margin_width),
-        source_line(
-            &sanitize_source(source_line_text),
-            line_number,
-            margin_width,
-        ),
+        source_line(&sanitize_source(line_text), line_number, margin_width),
         source_sub_line(
-            &underline_text(source_line_text, underline_start, underline_width),
+            &underline_text(line_text, underline_start, underline_width),
             message,
             margin_width,
         ),
@@ -94,7 +97,12 @@ fn location_line(location: &str, margin_width: usize) -> String {
 }
 
 fn source_line(line_text: &str, line_number: u32, margin_width: usize) -> String {
-    format!("{line_number:<margin_width$}| {line_text}")
+    let mut source_line = format!("{line_number:<margin_width$}|");
+    if !line_text.is_empty() {
+        let _ = write!(source_line, " {line_text}");
+    }
+
+    source_line
 }
 
 fn source_sub_line(line_text: &str, message: Option<&str>, margin_width: usize) -> String {
@@ -108,23 +116,23 @@ fn source_sub_line(line_text: &str, message: Option<&str>, margin_width: usize) 
 }
 
 fn underline_text(source_line_text: &str, start: usize, width: usize) -> String {
-    let before = source_line_text
+    let before_count = source_line_text
         .chars()
         .take(start)
         .collect::<String>()
         .chars()
         .count();
-    let inside = source_line_text
+    let inside_count = source_line_text
         .chars()
         .skip(start)
         .take(width)
         .collect::<String>()
-        .replace('\t', "    ")
+        .replace('\t', &" ".repeat(4))
         .chars()
         .count()
         .max(1);
 
-    format!(" {}{}", " ".repeat(before), "^".repeat(inside))
+    format!(" {}{}", " ".repeat(before_count), "^".repeat(inside_count))
 }
 
 fn separator(margin_width: usize) -> String {
@@ -419,6 +427,76 @@ mod tests {
             RuleCode::new(Prefix::Nam, 9),
             "unknown name `x`",
             Primary::span(find("x", &source, &file)),
+        );
+
+        assert_eq!(render(&diagnostic, &source_map), expected);
+    }
+
+    #[test]
+    fn empty_span() {
+        let expected = "error[NAM-9]: unknown name `t`
+ --> src/main.fm:1:1
+  |
+1 | t
+  | ^
+";
+
+        let mut source_map = SourceMap::new();
+        let source = prepend_lines(0, "t");
+        let file = source_map.add(String::from("src/main.fm"), source.clone());
+
+        let diagnostic = Diagnostic::new(
+            RuleCode::new(Prefix::Nam, 9),
+            "unknown name `t`",
+            Primary::span(Span::new(file, 0, 0)),
+        );
+
+        assert_eq!(render(&diagnostic, &source_map), expected);
+    }
+
+    #[test]
+    fn end_of_file_span() {
+        let expected = "error[NAM-9]: unknown name `t`
+ --> src/main.fm:2:1
+  |
+2 |
+  | ^
+";
+
+        let mut source_map = SourceMap::new();
+        let source = prepend_lines(0, "t");
+        let file = source_map.add(String::from("src/main.fm"), source.clone());
+
+        let diagnostic = Diagnostic::new(
+            RuleCode::new(Prefix::Nam, 9),
+            "unknown name `t`",
+            Primary::span(Span::new(file, 2, 2)),
+        );
+
+        assert_eq!(render(&diagnostic, &source_map), expected);
+    }
+
+    #[test]
+    fn multi_line_span() {
+        let expected = "error[NAM-9]: unknown name `totl`
+ --> src/main.fm:1:9
+  |
+1 | let s = \"a long string on a line\"
+  |         ^^^^^^^^^^^^^^^^^^^^^^^^^
+";
+
+        let mut source_map = SourceMap::new();
+        let source = prepend_lines(0, "let s = \"a long string on a line\"\n print(\"s\")");
+        let file = source_map.add(String::from("src/main.fm"), source.clone());
+
+        let diagnostic = Diagnostic::new(
+            RuleCode::new(Prefix::Nam, 9),
+            "unknown name `totl`",
+            Primary::span(find(
+                "\"a long string on a line\"\n print(\"s\")",
+                "let s = \"a long string on a line\"\n print(\"s\")",
+                &file,
+            )),
         );
 
         assert_eq!(render(&diagnostic, &source_map), expected);
