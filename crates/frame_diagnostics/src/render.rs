@@ -724,6 +724,77 @@ mod tests {
     }
 
     #[test]
+    fn every_character_refused_by_lex_2_is_written_as_a_replacement_character() {
+        // The list of LEX-2, written from the rule rather than from the code. A CR is refused
+        // here: no line feed follows it.
+        let refused = ('\u{0}'..='\u{1F}')
+            .filter(|&c| c != '\t' && c != '\n')
+            .chain('\u{7F}'..='\u{9F}')
+            .chain(['\u{061C}', '\u{200E}', '\u{200F}'])
+            .chain('\u{202A}'..='\u{202E}')
+            .chain('\u{2066}'..='\u{2069}')
+            .chain(['\u{FEFF}']);
+
+        for c in refused {
+            let (source_map, file) =
+                source_map_with_file("demo.fm", &format!("print(\"{c}\") # done\n"));
+            let diagnostic = Diagnostic::new(
+                UNEXPECTED_CHARACTER,
+                "unexpected character `#`",
+                Primary::span(span_of("#", &source_map, file)),
+            );
+
+            assert_eq!(
+                render(&diagnostic, &source_map),
+                concat!(
+                    "error[LEX-24]: unexpected character `#`\n",
+                    " --> demo.fm:1:12\n",
+                    "  |\n",
+                    "1 | print(\"\u{FFFD}\") # done\n",
+                    "  |            ^\n",
+                ),
+                "U+{:04X}",
+                u32::from(c)
+            );
+        }
+    }
+
+    #[test]
+    fn neighbors_of_the_characters_refused_by_lex_2_are_written_as_they_are() {
+        // The character next to each range of LEX-2, outside it: a range that grows is seen too.
+        let allowed = [
+            '\u{20}', '\u{7E}', '\u{A0}', '\u{061B}', '\u{061D}', '\u{200D}', '\u{2010}',
+            '\u{2029}', '\u{202F}', '\u{2065}', '\u{206A}', '\u{FEFE}', '\u{FF00}',
+        ];
+
+        for c in allowed {
+            let (source_map, file) =
+                source_map_with_file("demo.fm", &format!("print(\"{c}\") # done\n"));
+            let diagnostic = Diagnostic::new(
+                UNEXPECTED_CHARACTER,
+                "unexpected character `#`",
+                Primary::span(span_of("#", &source_map, file)),
+            );
+
+            assert_eq!(
+                render(&diagnostic, &source_map),
+                format!(
+                    concat!(
+                        "error[LEX-24]: unexpected character `#`\n",
+                        " --> demo.fm:1:12\n",
+                        "  |\n",
+                        "1 | print(\"{}\") # done\n",
+                        "  |            ^\n",
+                    ),
+                    c
+                ),
+                "U+{:04X}",
+                u32::from(c)
+            );
+        }
+    }
+
+    #[test]
     fn whole_file_has_no_source_line() {
         let (source_map, file) = source_map_with_file("big.fm", "");
         let diagnostic = Diagnostic::new(
@@ -741,6 +812,52 @@ mod tests {
                 " --> big.fm",
                 "  |",
                 "  = reason: the limit is 16 MiB (16777216 bytes)",
+            ],
+        );
+    }
+
+    #[test]
+    fn whole_file_help_alone_follows_a_separator() {
+        let (source_map, file) = source_map_with_file("big.fm", "");
+        let diagnostic = Diagnostic::new(
+            TRANSLATION_LIMITS,
+            "source file is too large",
+            Primary::file(file),
+        )
+        .with_help("split it into smaller files");
+
+        assert_render(
+            &diagnostic,
+            &source_map,
+            &[
+                "error[CNF-6]: source file is too large",
+                " --> big.fm",
+                "  |",
+                "  = help: split it into smaller files",
+            ],
+        );
+    }
+
+    #[test]
+    fn whole_file_reason_then_help_follow_a_separator() {
+        let (source_map, file) = source_map_with_file("big.fm", "");
+        let diagnostic = Diagnostic::new(
+            TRANSLATION_LIMITS,
+            "source file is too large",
+            Primary::file(file),
+        )
+        .with_reason("the limit is 16 MiB (16777216 bytes)")
+        .with_help("split it into smaller files");
+
+        assert_render(
+            &diagnostic,
+            &source_map,
+            &[
+                "error[CNF-6]: source file is too large",
+                " --> big.fm",
+                "  |",
+                "  = reason: the limit is 16 MiB (16777216 bytes)",
+                "  = help: split it into smaller files",
             ],
         );
     }
