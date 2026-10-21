@@ -67,20 +67,7 @@ pub fn render(diagnostic: &Diagnostic, source_map: &SourceMap) -> String {
 /// a one-digit line number.
 fn render_file_level_diagnostic(file: &SourceFile, diagnostic: &Diagnostic) -> String {
     let mut lines = vec![title_line(diagnostic), location_line(file.name(), 2)];
-    let reason = reason_line(diagnostic.reason(), 2);
-    let help = help_line(diagnostic.help(), 2);
-
-    if reason.is_some() || help.is_some() {
-        lines.push(separator(2));
-    }
-
-    if let Some(reason) = reason {
-        lines.push(reason);
-    }
-
-    if let Some(help) = help {
-        lines.push(help);
-    }
+    lines.append(&mut end_lines(diagnostic, 2));
 
     text_from_lines(&lines.iter().map(String::deref).collect::<Vec<&str>>())
 }
@@ -108,9 +95,6 @@ fn render_span_level_diagnostic(
         (end_line_col.column() as usize - 1) - underline_start
     };
 
-    let reason = reason_line(diagnostic.reason(), margin_width);
-    let help = help_line(diagnostic.help(), margin_width);
-
     let mut lines = vec![
         title_line(diagnostic),
         location_line(&file.location(span.start()).to_string(), margin_width),
@@ -122,18 +106,7 @@ fn render_span_level_diagnostic(
             margin_width,
         ),
     ];
-
-    if reason.is_some() || help.is_some() {
-        lines.push(separator(margin_width));
-    }
-
-    if let Some(reason) = reason {
-        lines.push(reason);
-    }
-
-    if let Some(help) = help {
-        lines.push(help);
-    }
+    lines.append(&mut end_lines(diagnostic, margin_width));
 
     text_from_lines(&lines.iter().map(String::deref).collect::<Vec<&str>>())
 }
@@ -190,6 +163,26 @@ fn underline(line_text: &str, start: usize, char_count: usize) -> String {
         .max(1);
 
     format!(" {}{}", " ".repeat(space_count), "^".repeat(caret_count))
+}
+
+fn end_lines(diagnostic: &Diagnostic, margin_width: usize) -> Vec<String> {
+    let mut lines: Vec<String> = vec![];
+    let reason = reason_line(diagnostic.reason(), margin_width);
+    let help = help_line(diagnostic.help(), margin_width);
+
+    if reason.is_some() || help.is_some() {
+        lines.push(separator(margin_width));
+    }
+
+    if let Some(reason) = reason {
+        lines.push(reason);
+    }
+
+    if let Some(help) = help {
+        lines.push(help);
+    }
+
+    lines
 }
 
 fn separator(margin_width: usize) -> String {
