@@ -110,7 +110,12 @@ impl SourceFile {
         usize_to_u32(self.line_starts.len())
     }
 
-    /// Returns the location of an offset
+    /// Returns the location of a byte offset: the name of the file, with the line and the
+    /// column of [`SourceFile::line_col`]. The offset of the end of the text is valid.
+    ///
+    /// # Panics
+    ///
+    /// Panics if `offset` is past the end of the text, or inside a character.
     pub fn location(&self, offset: u32) -> Location {
         Location::new(self.name(), self.line_col(offset))
     }

@@ -1,4 +1,4 @@
-//! The diagnostic render module
+//! Rendering a diagnostic as text, in the layout of DIA-6.
 
 use std::fmt::Write;
 use std::ops::Deref;
@@ -6,7 +6,49 @@ use std::ops::Deref;
 use super::{Diagnostic, Primary};
 use frame_source::{SourceFile, SourceMap, Span};
 
-/// Render the diagnostic
+/// Renders `diagnostic` as text, in the layout of DIA-6.
+///
+/// The text has the line `error[CODE]: title`, the location, the line of source with the
+/// primary span underlined by `^` and followed by its message, then the reason and the help.
+/// Each line, the last one included, ends with a newline. In the line of source, a tab is
+/// written as four spaces, and a character that LEX-2 refuses as `�`, so that the source
+/// cannot control the terminal.
+///
+/// Secondary labels and the fix are not rendered yet.
+///
+/// # Examples
+///
+/// ```
+/// use frame_diagnostics::{Diagnostic, Prefix, Primary, RuleCode, render};
+/// use frame_source::{SourceMap, Span};
+///
+/// let mut source_map = SourceMap::new();
+/// let file = source_map.add(String::from("demo.fm"), String::from("if a && b {\n}\n"));
+/// let diagnostic = Diagnostic::new(
+///     RuleCode::new(Prefix::Lex, 23),
+///     "`&&` is not an operator",
+///     Primary::span_with_message(Span::new(file, 5, 7), "use `and`"),
+/// )
+/// .with_help("write `and` instead of `&&`");
+///
+/// assert_eq!(
+///     render(&diagnostic, &source_map),
+///     concat!(
+///         "error[LEX-23]: `&&` is not an operator\n",
+///         " --> demo.fm:1:6\n",
+///         "  |\n",
+///         "1 | if a && b {\n",
+///         "  |      ^^ use `and`\n",
+///         "  |\n",
+///         "  = help: write `and` instead of `&&`\n",
+///     )
+/// );
+/// ```
+///
+/// # Panics
+///
+/// Panics if the file of the primary location is unknown to `source_map`, or if the span of
+/// the primary location ends past the end of its text or splits a character.
 pub fn render(diagnostic: &Diagnostic, source_map: &SourceMap) -> String {
     match diagnostic.primary() {
         Primary::File { file } => {
@@ -20,24 +62,28 @@ pub fn render(diagnostic: &Diagnostic, source_map: &SourceMap) -> String {
     }
 }
 
+/// Renders a diagnostic about a whole file: without a line of source, and with the margin of
+/// a one-digit line number.
 fn render_file_level_diagnostic(file: &SourceFile, diagnostic: &Diagnostic) -> String {
-    let mut render = vec![
+    let mut lines = vec![
         title_line(diagnostic),
         location_line(file.name(), 1),
         separator(1),
     ];
 
     if let Some(reason) = reason_line(diagnostic.reason(), 1) {
-        render.push(reason);
+        lines.push(reason);
     }
 
     if let Some(help) = help_line(diagnostic.help(), 1) {
-        render.push(help);
+        lines.push(help);
     }
 
-    text_from_lines(&render.iter().map(String::deref).collect::<Vec<&str>>())
+    text_from_lines(&lines.iter().map(String::deref).collect::<Vec<&str>>())
 }
 
+/// Renders a diagnostic about a span: the line where the span starts, underlined from the
+/// start of the span to its end, or to the end of the line when the span goes on.
 fn render_span_level_diagnostic(
     file: &SourceFile,
     diagnostic: &Diagnostic,
@@ -50,9 +96,10 @@ fn render_span_level_diagnostic(
     let line_number = start_line_col.line();
     let line_text = file.line_text(line_number);
 
+    // The line number, then a space: the `|` comes after the margin.
     let margin_width = line_number.to_string().len() + 1;
     let underline_start = start_line_col.column() as usize - 1;
-    let underline_width = if end_line_col.line() > start_line_col.line() {
+    let underline_char_count = if end_line_col.line() > start_line_col.line() {
         line_text.chars().skip(underline_start).count()
     } else {
         (end_line_col.column() as usize - 1) - underline_start
@@ -61,31 +108,31 @@ fn render_span_level_diagnostic(
     let reason = reason_line(diagnostic.reason(), margin_width);
     let help = help_line(diagnostic.help(), margin_width);
 
-    let mut render = vec![
+    let mut lines = vec![
         title_line(diagnostic),
         location_line(&file.location(span.start()).to_string(), margin_width),
         separator(margin_width),
-        source_line(&sanitize_source(line_text), line_number, margin_width),
-        source_sub_line(
-            &underline_text(line_text, underline_start, underline_width),
+        source_line(&displayed_line(line_text), line_number, margin_width),
+        underline_line(
+            &underline(line_text, underline_start, underline_char_count),
             message,
             margin_width,
         ),
     ];
 
     if reason.is_some() || help.is_some() {
-        render.push(separator(margin_width));
+        lines.push(separator(margin_width));
     }
 
     if let Some(reason) = reason {
-        render.push(reason);
+        lines.push(reason);
     }
 
     if let Some(help) = help {
-        render.push(help);
+        lines.push(help);
     }
 
-    text_from_lines(&render.iter().map(String::deref).collect::<Vec<&str>>())
+    text_from_lines(&lines.iter().map(String::deref).collect::<Vec<&str>>())
 }
 
 fn title_line(diagnostic: &Diagnostic) -> String {
@@ -97,42 +144,46 @@ fn location_line(location: &str, margin_width: usize) -> String {
 }
 
 fn source_line(line_text: &str, line_number: u32, margin_width: usize) -> String {
-    let mut source_line = format!("{line_number:<margin_width$}|");
+    let mut line = format!("{line_number:<margin_width$}|");
+    // An empty line ends at the bar: the rendering adds no trailing space.
     if !line_text.is_empty() {
-        let _ = write!(source_line, " {line_text}");
+        let _ = write!(line, " {line_text}");
     }
 
-    source_line
+    line
 }
 
-fn source_sub_line(line_text: &str, message: Option<&str>, margin_width: usize) -> String {
-    let mut source_line = format!("{}|{}", " ".repeat(margin_width), line_text);
+fn underline_line(underline: &str, message: Option<&str>, margin_width: usize) -> String {
+    let mut line = format!("{}|{}", " ".repeat(margin_width), underline);
 
     if let Some(message) = message {
-        let _ = write!(source_line, " {message}");
+        let _ = write!(line, " {message}");
     }
 
-    source_line
+    line
 }
 
-fn underline_text(source_line_text: &str, start: usize, width: usize) -> String {
-    let before_count = source_line_text
+/// Returns the spaces, then the `^`, that underline `char_count` characters of `line_text`,
+/// after its first `start` characters: a tab is four columns wide, and an empty span gets
+/// one `^`.
+fn underline(line_text: &str, start: usize, char_count: usize) -> String {
+    let space_count = line_text
         .chars()
         .take(start)
         .collect::<String>()
         .chars()
         .count();
-    let inside_count = source_line_text
+    let caret_count = line_text
         .chars()
         .skip(start)
-        .take(width)
+        .take(char_count)
         .collect::<String>()
         .replace('\t', &" ".repeat(4))
         .chars()
         .count()
         .max(1);
 
-    format!(" {}{}", " ".repeat(before_count), "^".repeat(inside_count))
+    format!(" {}{}", " ".repeat(space_count), "^".repeat(caret_count))
 }
 
 fn separator(margin_width: usize) -> String {
@@ -156,22 +207,25 @@ fn text_from_lines(lines: &[&str]) -> String {
     text
 }
 
-fn sanitize_source(source: &str) -> String {
-    source
-        .replace('\t', &" ".repeat(4))
+/// Returns `line` as it is displayed: each tab as four spaces, so that the `^` can be aligned
+/// under it, and each character that LEX-2 refuses as `�`, so that the source cannot control
+/// the terminal, as a `\r` or an escape sequence would.
+fn displayed_line(line: &str) -> String {
+    line.replace('\t', &" ".repeat(4))
         .replace(
             |c: char| c.is_control(),
             &char::REPLACEMENT_CHARACTER.to_string(),
         )
+        // The bidirectional marks, and U+FEFF: the loader removed the one at the start of the file.
         .replace(
             |c: char| {
-                let cp = c as u32;
-                cp == 0x061C
-                    || cp == 0x200E
-                    || cp == 0x200F
-                    || (0x202A..=0x202E).contains(&cp)
-                    || (0x2066..=0x2069).contains(&cp)
-                    || cp == 0xFEFF
+                let code_point = c as u32;
+                code_point == 0x061C
+                    || code_point == 0x200E
+                    || code_point == 0x200F
+                    || (0x202A..=0x202E).contains(&code_point)
+                    || (0x2066..=0x2069).contains(&code_point)
+                    || code_point == 0xFEFF
             },
             &char::REPLACEMENT_CHARACTER.to_string(),
         )
