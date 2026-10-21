@@ -6,6 +6,7 @@ use std::ops::Deref;
 use super::{Diagnostic, Primary};
 use frame_source::{SourceFile, SourceMap, Span};
 
+const FILE_LEVEL_MARGIN_WIDTH: usize = 2;
 const TABULATION_DISPLAY_WIDTH: usize = 4;
 
 /// Renders `diagnostic` as text, in the layout of DIA-6.
@@ -68,8 +69,11 @@ pub fn render(diagnostic: &Diagnostic, source_map: &SourceMap) -> String {
 /// Renders a diagnostic about a whole file: without a line of source, and with the margin of
 /// a one-digit line number.
 fn render_file_level_diagnostic(file: &SourceFile, diagnostic: &Diagnostic) -> String {
-    let mut lines = vec![title_line(diagnostic), location_line(file.name(), 2)];
-    lines.append(&mut end_lines(diagnostic, 2));
+    let mut lines = vec![
+        title_line(diagnostic),
+        location_line(file.name(), FILE_LEVEL_MARGIN_WIDTH),
+    ];
+    lines.append(&mut end_lines(diagnostic, FILE_LEVEL_MARGIN_WIDTH));
 
     text_from_lines(&lines.iter().map(String::deref).collect::<Vec<&str>>())
 }
