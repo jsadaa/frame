@@ -10,8 +10,9 @@ use frame_source::{SourceFile, SourceMap, Span};
 ///
 /// The text has the line `error[CODE]: title`, the location, the line of source with the
 /// primary span underlined by `^` and followed by its message, then the reason and the help.
-/// Each line, the last one included, ends with a newline. In the line of source, a tab is
-/// written as four spaces, and a character that LEX-2 refuses as `�`, so that the source
+/// For a whole file, the location is the name of the file alone, and no line of source is
+/// shown. Each line, the last one included, ends with a newline. In the line of source, a tab
+/// is written as four spaces, and a character that LEX-2 refuses as `�`, so that the source
 /// cannot control the terminal.
 ///
 /// Secondary labels and the fix are not rendered yet.
@@ -158,18 +159,18 @@ fn source_line(line_text: &str, line_number: u32, margin_width: usize) -> String
 fn underline_line(underline: &str, message: Option<&str>, margin_width: usize) -> String {
     let mut line = format!("{}|{}", " ".repeat(margin_width), underline);
 
-    if let Some(m) = message
-        && !m.is_empty()
+    if let Some(message) = message
+        && !message.is_empty()
     {
-        let _ = write!(line, " {m}");
+        let _ = write!(line, " {message}");
     }
 
     line
 }
 
-/// Returns the spaces, then the `^`, that underline `char_count` characters of `line_text`,
-/// after its first `start` characters: a tab is four columns wide, and an empty span gets
-/// one `^`.
+/// Returns what follows the `|` under the line of source: a space, then the spaces and the `^`
+/// that underline `char_count` characters of `line_text`, after its first `start` characters.
+/// A tab is four columns wide, and an empty span gets one `^`.
 fn underline(line_text: &str, start: usize, char_count: usize) -> String {
     let space_count = line_text
         .chars()

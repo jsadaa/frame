@@ -2,7 +2,7 @@
 //!
 //! A [`Diagnostic`] names the violated rule by its [`RuleCode`], such as `MUT-4`, and says
 //! where and why the program is refused. It has no severity: every diagnostic is an error
-//! (DIA-2).
+//! (DIA-2). [`render()`] writes it as text (DIA-6).
 
 mod render;
 
