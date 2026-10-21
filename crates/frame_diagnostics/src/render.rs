@@ -6,6 +6,8 @@ use std::ops::Deref;
 use super::{Diagnostic, Primary};
 use frame_source::{SourceFile, SourceMap, Span};
 
+const TABULATION_DISPLAY_WIDTH: usize = 4;
+
 /// Renders `diagnostic` as text, in the layout of DIA-6.
 ///
 /// The text has the line `error[CODE]: title`, the location, the line of source with the
@@ -145,22 +147,8 @@ fn underline_line(underline: &str, message: Option<&str>, margin_width: usize) -
 /// that underline `char_count` characters of `line_text`, after its first `start` characters.
 /// A tab is four columns wide, and an empty span gets one `^`.
 fn underline(line_text: &str, start: usize, char_count: usize) -> String {
-    let space_count = line_text
-        .chars()
-        .take(start)
-        .collect::<String>()
-        .replace('\t', &" ".repeat(4))
-        .chars()
-        .count();
-    let caret_count = line_text
-        .chars()
-        .skip(start)
-        .take(char_count)
-        .collect::<String>()
-        .replace('\t', &" ".repeat(4))
-        .chars()
-        .count()
-        .max(1);
+    let space_count = chars_count(line_text, 0, start);
+    let caret_count = chars_count(line_text, start, char_count).max(1);
 
     format!(" {}{}", " ".repeat(space_count), "^".repeat(caret_count))
 }
@@ -210,7 +198,7 @@ fn text_from_lines(lines: &[&str]) -> String {
 /// under it, and each character that LEX-2 refuses as `�`, so that the source cannot control
 /// the terminal, as a `\r` or an escape sequence would.
 fn displayed_line(line: &str) -> String {
-    line.replace('\t', &" ".repeat(4))
+    line.replace('\t', &" ".repeat(TABULATION_DISPLAY_WIDTH))
         .replace(
             |c: char| c.is_control(),
             &char::REPLACEMENT_CHARACTER.to_string(),
@@ -228,6 +216,17 @@ fn displayed_line(line: &str) -> String {
             },
             &char::REPLACEMENT_CHARACTER.to_string(),
         )
+}
+
+fn chars_count(text: &str, from: usize, to: usize) -> usize {
+    text.chars()
+        .skip(from)
+        .take(to)
+        .map(|c| match c {
+            '\t' => TABULATION_DISPLAY_WIDTH,
+            _ => 1,
+        })
+        .sum()
 }
 
 #[cfg(test)]
