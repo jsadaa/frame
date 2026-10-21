@@ -65,17 +65,19 @@ pub fn render(diagnostic: &Diagnostic, source_map: &SourceMap) -> String {
 /// Renders a diagnostic about a whole file: without a line of source, and with the margin of
 /// a one-digit line number.
 fn render_file_level_diagnostic(file: &SourceFile, diagnostic: &Diagnostic) -> String {
-    let mut lines = vec![
-        title_line(diagnostic),
-        location_line(file.name(), 1),
-        separator(1),
-    ];
+    let mut lines = vec![title_line(diagnostic), location_line(file.name(), 2)];
+    let reason = reason_line(diagnostic.reason(), 2);
+    let help = help_line(diagnostic.help(), 2);
 
-    if let Some(reason) = reason_line(diagnostic.reason(), 1) {
+    if reason.is_some() || help.is_some() {
+        lines.push(separator(2));
+    }
+
+    if let Some(reason) = reason {
         lines.push(reason);
     }
 
-    if let Some(help) = help_line(diagnostic.help(), 1) {
+    if let Some(help) = help {
         lines.push(help);
     }
 
