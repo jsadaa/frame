@@ -171,6 +171,7 @@ fn underline(line_text: &str, start: usize, char_count: usize) -> String {
         .chars()
         .take(start)
         .collect::<String>()
+        .replace('\t', &" ".repeat(4))
         .chars()
         .count();
     let caret_count = line_text
