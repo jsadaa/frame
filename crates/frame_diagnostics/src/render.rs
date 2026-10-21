@@ -156,8 +156,10 @@ fn source_line(line_text: &str, line_number: u32, margin_width: usize) -> String
 fn underline_line(underline: &str, message: Option<&str>, margin_width: usize) -> String {
     let mut line = format!("{}|{}", " ".repeat(margin_width), underline);
 
-    if let Some(message) = message {
-        let _ = write!(line, " {message}");
+    if let Some(m) = message
+        && !m.is_empty()
+    {
+        let _ = write!(line, " {m}");
     }
 
     line
