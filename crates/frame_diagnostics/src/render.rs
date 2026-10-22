@@ -86,10 +86,10 @@ fn render_span_diagnostic(
     let end_line_col = file.line_col(span.end());
 
     let line_number = start_line_col.line();
+    let line_number_digit_count = line_number.to_string().len();
     let line_text = file.line_text(line_number);
 
     // The line number, then a space: the `|` comes after the margin.
-    let line_number_digit_count = line_number.to_string().len();
     let margin_width = line_number_digit_count + 1;
 
     let underline_start = start_line_col.column() as usize - 1;
