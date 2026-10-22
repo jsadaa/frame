@@ -74,7 +74,7 @@ fn render_file_level_diagnostic(file: &SourceFile, diagnostic: &Diagnostic) -> S
     ];
     lines.append(&mut end_lines(diagnostic, FILE_LEVEL_MARGIN_WIDTH));
 
-    text_from_lines(&lines.iter().map(String::deref).collect::<Vec<&str>>())
+    text_from_lines(&lines)
 }
 
 /// Renders a diagnostic about a span: the line where the span starts, underlined from the
@@ -113,7 +113,7 @@ fn render_span_level_diagnostic(
     ];
     lines.append(&mut end_lines(diagnostic, margin_width));
 
-    text_from_lines(&lines.iter().map(String::deref).collect::<Vec<&str>>())
+    text_from_lines(&lines)
 }
 
 fn title_line(diagnostic: &Diagnostic) -> String {
@@ -190,7 +190,7 @@ fn help_line(help: Option<&str>, margin_width: usize) -> Option<String> {
     help.map(|help| format!("{}= help: {help}", " ".repeat(margin_width)))
 }
 
-fn text_from_lines(lines: &[&str]) -> String {
+fn text_from_lines(lines: &[String]) -> String {
     let mut text = String::new();
     for line in lines {
         text.push_str(line);
