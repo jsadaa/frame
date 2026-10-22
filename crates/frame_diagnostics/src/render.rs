@@ -52,14 +52,13 @@ const TABULATION_DISPLAY_WIDTH: usize = 4;
 /// the primary location ends past the end of its text or splits a character.
 pub fn render(diagnostic: &Diagnostic, source_map: &SourceMap) -> String {
     match diagnostic.primary() {
-        Primary::File { file } => {
-            let file = source_map.file(*file);
-            render_file_diagnostic(file, diagnostic)
-        }
-        Primary::Span { span, message } => {
-            let file = source_map.file(span.file());
-            render_span_diagnostic(file, diagnostic, *span, message.as_deref())
-        }
+        Primary::File { file } => render_file_diagnostic(source_map.file(*file), diagnostic),
+        Primary::Span { span, message } => render_span_diagnostic(
+            source_map.file(span.file()),
+            diagnostic,
+            *span,
+            message.as_deref(),
+        ),
     }
 }
 
