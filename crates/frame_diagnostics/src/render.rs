@@ -202,24 +202,20 @@ fn text_from_lines(lines: &[&str]) -> String {
 /// under it, and each character that LEX-2 refuses as `�`, so that the source cannot control
 /// the terminal, as a `\r` or an escape sequence would.
 fn displayed_line(line: &str) -> String {
-    line.replace('\t', &" ".repeat(TABULATION_DISPLAY_WIDTH))
-        .replace(
-            |c: char| c.is_control(),
-            &char::REPLACEMENT_CHARACTER.to_string(),
-        )
-        // The bidirectional marks, and U+FEFF: the loader removed the one at the start of the file.
-        .replace(
-            |c: char| {
-                let code_point = c as u32;
-                code_point == 0x061C
-                    || code_point == 0x200E
-                    || code_point == 0x200F
-                    || (0x202A..=0x202E).contains(&code_point)
-                    || (0x2066..=0x2069).contains(&code_point)
-                    || code_point == 0xFEFF
-            },
-            &char::REPLACEMENT_CHARACTER.to_string(),
-        )
+    let mut displayed = String::new();
+    for char in line.chars() {
+        match char {
+            '\t' => displayed.push_str(&" ".repeat(TABULATION_DISPLAY_WIDTH)),
+            c if c.is_control()
+                || matches!(c as u32, 0x061C | 0x200E | 0x200F | 0x202A..=0x202E | 0x2066..=0x2069 | 0xFEFF ) =>
+            {
+                displayed.push(char::REPLACEMENT_CHARACTER);
+            }
+            c => displayed.push(c),
+        }
+    }
+
+    displayed
 }
 
 fn chars_count(text: &str, from: usize, to: usize) -> usize {
