@@ -58,7 +58,7 @@ pub fn render(diagnostic: &Diagnostic, source_map: &SourceMap) -> String {
         }
         Primary::Span { span, message } => {
             let file = source_map.file(span.file());
-            render_span_level_diagnostic(file, diagnostic, span, message.as_deref())
+            render_span_level_diagnostic(file, diagnostic, *span, message.as_deref())
         }
     }
 }
@@ -80,7 +80,7 @@ fn render_file_level_diagnostic(file: &SourceFile, diagnostic: &Diagnostic) -> S
 fn render_span_level_diagnostic(
     file: &SourceFile,
     diagnostic: &Diagnostic,
-    span: &Span,
+    span: Span,
     message: Option<&str>,
 ) -> String {
     let start_line_col = file.line_col(span.start());
