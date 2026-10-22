@@ -1,7 +1,5 @@
 //! Rendering a diagnostic as text, in the layout of DIA-6.
 
-use std::ops::Deref;
-
 use super::{Diagnostic, Primary};
 use frame_source::{SourceFile, SourceMap, Span};
 
