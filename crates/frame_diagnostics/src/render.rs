@@ -1,7 +1,7 @@
 //! Rendering a diagnostic as text, in the layout of DIA-6.
 
 use super::{Diagnostic, Primary};
-use frame_source::{Location, SourceFile, SourceMap, Span};
+use frame_source::{Location, SourceFile, SourceMap, Span, usize_to_u32};
 
 const FILE_LEVEL_MARGIN_WIDTH: usize = 2;
 const TABULATION_DISPLAY_WIDTH: usize = 4;
@@ -95,7 +95,7 @@ fn render_span_level_diagnostic(
 
     let underline_start = start_line_col.column() as usize - 1;
     let underline_char_count = if end_line_col.line() > start_line_col.line() {
-        line_text.chars().skip(underline_start).count()
+        (file.line_col(usize_to_u32(line_text.len())).column() - 1) as usize
     } else {
         (end_line_col.column() as usize - 1) - underline_start
     };
