@@ -107,11 +107,7 @@ fn render_span_diagnostic(
             margin_width,
         ),
         separator(margin_width),
-        source_line(
-            &displayed_line(line_text),
-            line_number,
-            line_number_digit_count,
-        ),
+        source_line(line_text, line_number, line_number_digit_count),
         underline_line(
             &underline(line_text, underline_start, underline_char_count),
             message,
@@ -124,7 +120,11 @@ fn render_span_diagnostic(
 }
 
 fn title_line(diagnostic: &Diagnostic) -> String {
-    format!("error[{}]: {}", diagnostic.code(), diagnostic.title())
+    format!(
+        "error[{}]: {}",
+        diagnostic.code(),
+        displayed_text(diagnostic.title())
+    )
 }
 
 fn location_line(location: &str, margin_width: usize) -> String {
@@ -136,7 +136,7 @@ fn source_line(line_text: &str, line_number: u32, line_number_digit_count: usize
     // An empty line ends at the bar: the rendering adds no trailing space.
     if !line_text.is_empty() {
         line.push(' ');
-        line.push_str(line_text);
+        line.push_str(&displayed_text(line_text));
     }
 
     line
@@ -149,7 +149,7 @@ fn underline_line(underline: &str, message: Option<&str>, margin_width: usize) -
         && !message.is_empty()
     {
         line.push(' ');
-        line.push_str(message);
+        line.push_str(&displayed_text(message));
     }
 
     line
@@ -190,11 +190,23 @@ fn separator(margin_width: usize) -> String {
 }
 
 fn reason_line(reason: Option<&str>, margin_width: usize) -> Option<String> {
-    reason.map(|reason| format!("{}= reason: {reason}", " ".repeat(margin_width)))
+    reason.map(|reason| {
+        format!(
+            "{}= reason: {}",
+            " ".repeat(margin_width),
+            displayed_text(reason)
+        )
+    })
 }
 
 fn help_line(help: Option<&str>, margin_width: usize) -> Option<String> {
-    help.map(|help| format!("{}= help: {help}", " ".repeat(margin_width)))
+    help.map(|help| {
+        format!(
+            "{}= help: {}",
+            " ".repeat(margin_width),
+            displayed_text(help),
+        )
+    })
 }
 
 fn text_from_lines(lines: &[String]) -> String {
@@ -206,12 +218,12 @@ fn text_from_lines(lines: &[String]) -> String {
     text
 }
 
-/// Returns `line` as it is displayed: each tab as four spaces, so that the `^` can be aligned
+/// Returns `text` as it is displayed: each tab as four spaces, so that the `^` can be aligned
 /// under it, and each character that LEX-2 refuses as `�`, so that the source cannot control
 /// the terminal, as a `\r` or an escape sequence would.
-fn displayed_line(line: &str) -> String {
+fn displayed_text(text: &str) -> String {
     let mut displayed = String::new();
-    for char in line.chars() {
+    for char in text.chars() {
         match char {
             '\t' => displayed.push_str(&" ".repeat(TABULATION_DISPLAY_WIDTH)),
             c if c.is_control() || is_forbidden_char(c) => {
