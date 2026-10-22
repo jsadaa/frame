@@ -54,18 +54,18 @@ pub fn render(diagnostic: &Diagnostic, source_map: &SourceMap) -> String {
     match diagnostic.primary() {
         Primary::File { file } => {
             let file = source_map.file(*file);
-            render_file_level_diagnostic(file, diagnostic)
+            render_file_diagnostic(file, diagnostic)
         }
         Primary::Span { span, message } => {
             let file = source_map.file(span.file());
-            render_span_level_diagnostic(file, diagnostic, *span, message.as_deref())
+            render_span_diagnostic(file, diagnostic, *span, message.as_deref())
         }
     }
 }
 
 /// Renders a diagnostic about a whole file: without a line of source, and with the margin of
 /// a one-digit line number.
-fn render_file_level_diagnostic(file: &SourceFile, diagnostic: &Diagnostic) -> String {
+fn render_file_diagnostic(file: &SourceFile, diagnostic: &Diagnostic) -> String {
     let mut lines = vec![
         title_line(diagnostic),
         location_line(file.name(), FILE_LEVEL_MARGIN_WIDTH),
@@ -77,7 +77,7 @@ fn render_file_level_diagnostic(file: &SourceFile, diagnostic: &Diagnostic) -> S
 
 /// Renders a diagnostic about a span: the line where the span starts, underlined from the
 /// start of the span to its end, or to the end of the line when the span goes on.
-fn render_span_level_diagnostic(
+fn render_span_diagnostic(
     file: &SourceFile,
     diagnostic: &Diagnostic,
     span: Span,
