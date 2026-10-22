@@ -90,7 +90,8 @@ fn render_span_level_diagnostic(
     let line_text = file.line_text(line_number);
 
     // The line number, then a space: the `|` comes after the margin.
-    let margin_width = line_number.to_string().len() + 1;
+    let line_number_digit_count = line_number.to_string().len();
+    let margin_width = line_number_digit_count + 1;
 
     let underline_start = start_line_col.column() as usize - 1;
     let underline_char_count = if end_line_col.line() > start_line_col.line() {
@@ -103,7 +104,11 @@ fn render_span_level_diagnostic(
         title_line(diagnostic),
         location_line(&file.location(span.start()).to_string(), margin_width),
         separator(margin_width),
-        source_line(&displayed_line(line_text), line_number, margin_width),
+        source_line(
+            &displayed_line(line_text),
+            line_number,
+            line_number_digit_count,
+        ),
         underline_line(
             &underline(line_text, underline_start, underline_char_count),
             message,
@@ -123,8 +128,8 @@ fn location_line(location: &str, margin_width: usize) -> String {
     format!("{}--> {location}", " ".repeat(margin_width - 1))
 }
 
-fn source_line(line_text: &str, line_number: u32, margin_width: usize) -> String {
-    let mut line = format!("{line_number:<margin_width$}|");
+fn source_line(line_text: &str, line_number: u32, line_number_digit_count: usize) -> String {
+    let mut line = format!("{line_number:>line_number_digit_count$} |");
     // An empty line ends at the bar: the rendering adds no trailing space.
     if !line_text.is_empty() {
         line.push(' ');
