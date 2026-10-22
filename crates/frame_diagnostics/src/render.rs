@@ -1,6 +1,5 @@
 //! Rendering a diagnostic as text, in the layout of DIA-6.
 
-use std::fmt::Write;
 use std::ops::Deref;
 
 use super::{Diagnostic, Primary};
@@ -129,7 +128,8 @@ fn source_line(line_text: &str, line_number: u32, margin_width: usize) -> String
     let mut line = format!("{line_number:<margin_width$}|");
     // An empty line ends at the bar: the rendering adds no trailing space.
     if !line_text.is_empty() {
-        let _ = write!(line, " {line_text}");
+        line.push(' ');
+        line.push_str(line_text);
     }
 
     line
@@ -141,7 +141,8 @@ fn underline_line(underline: &str, message: Option<&str>, margin_width: usize) -
     if let Some(message) = message
         && !message.is_empty()
     {
-        let _ = write!(line, " {message}");
+        line.push(' ');
+        line.push_str(message);
     }
 
     line
