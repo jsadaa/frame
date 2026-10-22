@@ -136,7 +136,7 @@ fn source_line(line_text: &str, line_number: u32, margin_width: usize) -> String
 }
 
 fn underline_line(underline: &str, message: Option<&str>, margin_width: usize) -> String {
-    let mut line = format!("{}|{}", " ".repeat(margin_width), underline);
+    let mut line = format!("{}| {}", " ".repeat(margin_width), underline);
 
     if let Some(message) = message
         && !message.is_empty()
@@ -154,7 +154,7 @@ fn underline(line_text: &str, start: usize, char_count: usize) -> String {
     let space_count = chars_count(line_text, 0, start);
     let caret_count = chars_count(line_text, start, char_count).max(1);
 
-    format!(" {}{}", " ".repeat(space_count), "^".repeat(caret_count))
+    format!("{}{}", " ".repeat(space_count), "^".repeat(caret_count))
 }
 
 fn end_lines(diagnostic: &Diagnostic, margin_width: usize) -> Vec<String> {
