@@ -1,7 +1,7 @@
 //! Rendering a diagnostic as text, in the layout of DIA-6.
 
 use super::{Diagnostic, Primary};
-use frame_source::{SourceFile, SourceMap, Span};
+use frame_source::{Location, SourceFile, SourceMap, Span};
 
 const FILE_LEVEL_MARGIN_WIDTH: usize = 2;
 const TABULATION_DISPLAY_WIDTH: usize = 4;
@@ -102,7 +102,10 @@ fn render_span_level_diagnostic(
 
     let mut lines = vec![
         title_line(diagnostic),
-        location_line(&file.location(span.start()).to_string(), margin_width),
+        location_line(
+            &Location::new(file.name(), start_line_col).to_string(),
+            margin_width,
+        ),
         separator(margin_width),
         source_line(
             &displayed_line(line_text),
