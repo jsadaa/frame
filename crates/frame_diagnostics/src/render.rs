@@ -256,6 +256,7 @@ mod tests {
     use frame_source::{FileId, SourceMap, Span};
 
     const TRANSLATION_LIMITS: RuleCode = RuleCode::new(Prefix::Cnf, 6);
+    const FORBIDDEN_CHARACTER: RuleCode = RuleCode::new(Prefix::Lex, 2);
     const REFUSED_TOKEN: RuleCode = RuleCode::new(Prefix::Lex, 23);
     const UNEXPECTED_CHARACTER: RuleCode = RuleCode::new(Prefix::Lex, 24);
     const GRAMMAR: RuleCode = RuleCode::new(Prefix::Syn, 1);
@@ -682,6 +683,35 @@ mod tests {
     }
 
     #[test]
+    fn span_over_two_lines_after_line_1_is_underlined_to_the_end_of_the_first() {
+        let (source_map, file) = source_map_with_file(
+            "demo.fm",
+            "// déjà vu\nlet area = rect_area(width,\n    height, depth)\n",
+        );
+        let diagnostic = Diagnostic::new(
+            ARGUMENTS,
+            "`rect_area` takes 2 arguments, but 3 were given",
+            Primary::span(span_of(
+                "rect_area(width,\n    height, depth)",
+                &source_map,
+                file,
+            )),
+        );
+
+        assert_render(
+            &diagnostic,
+            &source_map,
+            &[
+                "error[EXP-14]: `rect_area` takes 2 arguments, but 3 were given",
+                " --> demo.fm:2:12",
+                "  |",
+                "2 | let area = rect_area(width,",
+                "  |            ^^^^^^^^^^^^^^^^",
+            ],
+        );
+    }
+
+    #[test]
     fn crlf_is_neither_shown_nor_underlined() {
         let (source_map, file) = source_map_with_file(
             "demo.fm",
@@ -805,6 +835,36 @@ mod tests {
                 u32::from(c)
             );
         }
+    }
+
+    #[test]
+    fn characters_refused_by_lex_2_in_the_texts_are_written_as_replacement_characters() {
+        let (source_map, file) = source_map_with_file("demo.fm", "print(\"\u{202E}\")\n");
+        let diagnostic = Diagnostic::new(
+            FORBIDDEN_CHARACTER,
+            "forbidden character `\u{202E}`",
+            Primary::span_with_message(
+                span_of("\u{202E}", &source_map, file),
+                "`\u{202E}` is a bidirectional mark",
+            ),
+        )
+        .with_reason("`\u{202E}` can show other code than the compiler reads")
+        .with_help("remove `\u{202E}`");
+
+        assert_render(
+            &diagnostic,
+            &source_map,
+            &[
+                "error[LEX-2]: forbidden character `\u{FFFD}`",
+                " --> demo.fm:1:8",
+                "  |",
+                "1 | print(\"\u{FFFD}\")",
+                "  |        ^ `\u{FFFD}` is a bidirectional mark",
+                "  |",
+                "  = reason: `\u{FFFD}` can show other code than the compiler reads",
+                "  = help: remove `\u{FFFD}`",
+            ],
+        );
     }
 
     #[test]
