@@ -676,6 +676,33 @@ mod tests {
     }
 
     #[test]
+    fn span_over_two_lines_from_column_1_is_underlined_to_the_end_of_the_first() {
+        let (source_map, file) =
+            source_map_with_file("demo.fm", "rect_area(width,\n    height, depth)\n");
+        let diagnostic = Diagnostic::new(
+            ARGUMENTS,
+            "`rect_area` takes 2 arguments, but 3 were given",
+            Primary::span(span_of(
+                "rect_area(width,\n    height, depth)",
+                &source_map,
+                file,
+            )),
+        );
+
+        assert_render(
+            &diagnostic,
+            &source_map,
+            &[
+                "error[EXP-14]: `rect_area` takes 2 arguments, but 3 were given",
+                " --> demo.fm:1:1",
+                "  |",
+                "1 | rect_area(width,",
+                "  | ^^^^^^^^^^^^^^^^",
+            ],
+        );
+    }
+
+    #[test]
     fn span_over_two_lines_after_line_1_is_underlined_to_the_end_of_the_first() {
         let (source_map, file) = source_map_with_file(
             "demo.fm",
