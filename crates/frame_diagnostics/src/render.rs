@@ -94,7 +94,7 @@ fn render_span_diagnostic(
 
     let underline_start = start_line_col.column() as usize - 1;
     let underline_char_count = if end_line_col.line() > start_line_col.line() {
-        (file.line_col(usize_to_u32(line_text.len())).column() - 1) as usize
+        line_text.chars().count()
     } else {
         (end_line_col.column() as usize - 1) - underline_start
     };
