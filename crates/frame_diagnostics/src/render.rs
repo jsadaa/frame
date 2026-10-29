@@ -214,33 +214,33 @@ fn text_from_lines(lines: &[String]) -> String {
 /// the terminal, as a `\r` or an escape sequence would.
 fn displayed_text(text: &str) -> String {
     let mut displayed = String::new();
-    for char in text.chars() {
-        match char {
+    for c in text.chars() {
+        match c {
             '\t' => displayed.push_str(&" ".repeat(TAB_WIDTH)),
-            char if is_refused_by_lex_2(char) => {
+            c if is_refused_by_lex_2(c) => {
                 displayed.push(char::REPLACEMENT_CHARACTER);
             }
-            char => displayed.push(char),
+            c => displayed.push(c),
         }
     }
 
     displayed
 }
 
-const fn is_refused_by_lex_2(char: char) -> bool {
-    char.is_control()
-        || matches!(char, '\u{061C}' | '\u{200E}' | '\u{200F}' | '\u{202A}'..='\u{202E}' | '\u{2066}'..='\u{2069}' | '\u{FEFF}')
-}
-
-fn display_width(text: &str, from: usize, to: usize) -> usize {
+fn display_width(text: &str, skip: usize, count: usize) -> usize {
     text.chars()
-        .skip(from)
-        .take(to)
-        .map(|char| match char {
+        .skip(skip)
+        .take(count)
+        .map(|c| match c {
             '\t' => TAB_WIDTH,
             _ => 1,
         })
         .sum()
+}
+
+const fn is_refused_by_lex_2(c: char) -> bool {
+    c.is_control()
+        || matches!(c, '\u{061C}' | '\u{200E}' | '\u{200F}' | '\u{202A}'..='\u{202E}' | '\u{2066}'..='\u{2069}' | '\u{FEFF}')
 }
 
 #[cfg(test)]
