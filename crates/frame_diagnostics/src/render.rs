@@ -69,7 +69,7 @@ fn render_file_diagnostic(file: &SourceFile, diagnostic: &Diagnostic) -> String 
         title_line(diagnostic),
         location_line(file.name(), FILE_LEVEL_MARGIN_WIDTH),
     ];
-    lines.append(&mut end_lines(diagnostic, FILE_LEVEL_MARGIN_WIDTH));
+    lines.extend(end_lines(diagnostic, FILE_LEVEL_MARGIN_WIDTH));
 
     text_from_lines(&lines)
 }
