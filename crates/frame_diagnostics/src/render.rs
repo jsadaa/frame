@@ -11,9 +11,9 @@ const TAB_WIDTH: usize = 4;
 /// The text has the line `error[CODE]: title`, the location, the line of source with the
 /// primary span underlined by `^` and followed by its message, then the reason and the help.
 /// For a whole file, the location is the name of the file alone, and no line of source is
-/// shown. Each line, the last one included, ends with a newline. In the line of source, a tab
-/// is written as four spaces, and a character that LEX-2 refuses as `�`, so that the source
-/// cannot control the terminal.
+/// shown. Each line, the last one included, ends with a newline. In each text, the name of the
+/// file included, a tab is written as four spaces, and a character that LEX-2 refuses as `�`,
+/// so that neither the source nor a file name can control the terminal.
 ///
 /// Secondary labels and the fix are not rendered yet.
 ///
@@ -127,7 +127,11 @@ fn title_line(diagnostic: &Diagnostic) -> String {
 }
 
 fn location_line(location: &str, margin_width: usize) -> String {
-    format!("{}--> {location}", " ".repeat(margin_width - 1))
+    format!(
+        "{}--> {}",
+        " ".repeat(margin_width - 1),
+        displayed_text(location)
+    )
 }
 
 fn source_line(line_text: &str, line_number: u32, line_number_digit_count: usize) -> String {
@@ -210,7 +214,7 @@ fn text_from_lines(lines: &[String]) -> String {
 }
 
 /// Returns `text` as it is displayed: each tab as four spaces, so that the `^` can be aligned
-/// under it, and each character that LEX-2 refuses as `�`, so that the source cannot control
+/// under it, and each character that LEX-2 refuses as `�`, so that the text cannot control
 /// the terminal, as a `\r` or an escape sequence would.
 fn displayed_text(text: &str) -> String {
     let mut displayed = String::new();
@@ -883,6 +887,29 @@ mod tests {
                 "  |",
                 "  = reason: `\u{FFFD}` can show other code than the compiler reads",
                 "  = help: remove `\u{FFFD}`",
+            ],
+        );
+    }
+
+    #[test]
+    fn characters_refused_by_lex_2_in_the_file_name_are_written_as_replacement_characters() {
+        // `ESC [2J` would clear the screen.
+        let (source_map, file) = source_map_with_file("a\u{1b}[2Jb.fm", "if a && b {\n");
+        let diagnostic = Diagnostic::new(
+            REFUSED_TOKEN,
+            "`&&` is not an operator",
+            Primary::span_with_message(span_of("&&", &source_map, file), "use `and`"),
+        );
+
+        assert_render(
+            &diagnostic,
+            &source_map,
+            &[
+                "error[LEX-23]: `&&` is not an operator",
+                " --> a\u{FFFD}[2Jb.fm:1:6",
+                "  |",
+                "1 | if a && b {",
+                "  |      ^^ use `and`",
             ],
         );
     }
