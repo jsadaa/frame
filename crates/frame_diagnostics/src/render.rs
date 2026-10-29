@@ -4,7 +4,7 @@ use super::{Diagnostic, Primary};
 use frame_source::{Location, SourceFile, SourceMap, Span};
 
 const FILE_LEVEL_MARGIN_WIDTH: usize = 2;
-const TABULATION_DISPLAY_WIDTH: usize = 4;
+const TAB_WIDTH: usize = 4;
 
 /// Renders `diagnostic` as text, in the layout of DIA-6.
 ///
@@ -113,7 +113,7 @@ fn render_span_diagnostic(
             margin_width,
         ),
     ];
-    lines.append(&mut end_lines(diagnostic, margin_width));
+    lines.extend(end_lines(diagnostic, margin_width));
 
     text_from_lines(&lines)
 }
@@ -158,16 +158,20 @@ fn underline_line(underline: &str, message: Option<&str>, margin_width: usize) -
 /// that underline `char_count` characters of `line_text`, after its first `start` characters.
 /// A tab is four columns wide, and an empty span gets one `^`.
 fn underline(line_text: &str, start: usize, char_count: usize) -> String {
-    let space_count = chars_count(line_text, 0, start);
-    let caret_count = chars_count(line_text, start, char_count).max(1);
+    let space_count = display_width(line_text, 0, start);
+    let caret_count = display_width(line_text, start, char_count).max(1);
 
     format!("{}{}", " ".repeat(space_count), "^".repeat(caret_count))
 }
 
 fn end_lines(diagnostic: &Diagnostic, margin_width: usize) -> Vec<String> {
     let mut lines: Vec<String> = vec![];
-    let reason = reason_line(diagnostic.reason(), margin_width);
-    let help = help_line(diagnostic.help(), margin_width);
+    let reason = diagnostic
+        .reason()
+        .map(|reason| end_line(reason, "reason", margin_width));
+    let help = diagnostic
+        .help()
+        .map(|help| end_line(help, "help", margin_width));
 
     if reason.is_some() || help.is_some() {
         lines.push(separator(margin_width));
@@ -188,24 +192,12 @@ fn separator(margin_width: usize) -> String {
     format!("{}|", " ".repeat(margin_width))
 }
 
-fn reason_line(reason: Option<&str>, margin_width: usize) -> Option<String> {
-    reason.map(|reason| {
-        format!(
-            "{}= reason: {}",
-            " ".repeat(margin_width),
-            displayed_text(reason)
-        )
-    })
-}
-
-fn help_line(help: Option<&str>, margin_width: usize) -> Option<String> {
-    help.map(|help| {
-        format!(
-            "{}= help: {}",
-            " ".repeat(margin_width),
-            displayed_text(help),
-        )
-    })
+fn end_line(text: &str, kind: &str, margin_width: usize) -> String {
+    format!(
+        "{}= {kind}: {}",
+        " ".repeat(margin_width),
+        displayed_text(text)
+    )
 }
 
 fn text_from_lines(lines: &[String]) -> String {
@@ -224,27 +216,28 @@ fn displayed_text(text: &str) -> String {
     let mut displayed = String::new();
     for char in text.chars() {
         match char {
-            '\t' => displayed.push_str(&" ".repeat(TABULATION_DISPLAY_WIDTH)),
-            c if c.is_control() || is_forbidden_char(c) => {
+            '\t' => displayed.push_str(&" ".repeat(TAB_WIDTH)),
+            char if is_refused_by_lex_2(char) => {
                 displayed.push(char::REPLACEMENT_CHARACTER);
             }
-            c => displayed.push(c),
+            char => displayed.push(char),
         }
     }
 
     displayed
 }
 
-fn is_forbidden_char(char: char) -> bool {
-    matches!(char as u32, 0x061C | 0x200E | 0x200F | 0x202A..=0x202E | 0x2066..=0x2069 | 0xFEFF )
+const fn is_refused_by_lex_2(char: char) -> bool {
+    char.is_control()
+        || matches!(char, '\u{061C}' | '\u{200E}' | '\u{200F}' | '\u{202A}'..='\u{202E}' | '\u{2066}'..='\u{2069}' | '\u{FEFF}')
 }
 
-fn chars_count(text: &str, from: usize, to: usize) -> usize {
+fn display_width(text: &str, from: usize, to: usize) -> usize {
     text.chars()
         .skip(from)
         .take(to)
-        .map(|c| match c {
-            '\t' => TABULATION_DISPLAY_WIDTH,
+        .map(|char| match char {
+            '\t' => TAB_WIDTH,
             _ => 1,
         })
         .sum()
