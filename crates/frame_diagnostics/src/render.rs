@@ -154,9 +154,9 @@ fn underline_line(underline: &str, message: Option<&str>, margin_width: usize) -
     line
 }
 
-/// Returns what follows the `|` under the line of source: a space, then the spaces and the `^`
-/// that underline `char_count` characters of `line_text`, after its first `start` characters.
-/// A tab is four columns wide, and an empty span gets one `^`.
+/// Returns the spaces and the `^` that underline at most `char_count` characters of
+/// `line_text`, after its first `start` characters: the `^` stop at the end of the line. A tab
+/// is four columns wide, and an empty span gets one `^`.
 fn underline(line_text: &str, start: usize, char_count: usize) -> String {
     let space_count = display_width(line_text, 0, start);
     let caret_count = display_width(line_text, start, char_count).max(1);
