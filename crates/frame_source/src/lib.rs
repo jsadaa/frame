@@ -292,7 +292,7 @@ fn compute_line_starts(text: &str) -> Vec<u32> {
 
 /// Converts a value bounded by the length of a text, which `SourceMap::add` checked to fit
 /// in a `u32`.
-pub fn usize_to_u32(n: usize) -> u32 {
+fn usize_to_u32(n: usize) -> u32 {
     u32::try_from(n).expect("the value should fit in u32, as add() checked the text length")
 }
 

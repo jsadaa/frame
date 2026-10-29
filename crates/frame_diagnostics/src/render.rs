@@ -1,7 +1,7 @@
 //! Rendering a diagnostic as text, in the layout of DIA-6.
 
 use super::{Diagnostic, Primary};
-use frame_source::{Location, SourceFile, SourceMap, Span, usize_to_u32};
+use frame_source::{Location, SourceFile, SourceMap, Span};
 
 const FILE_LEVEL_MARGIN_WIDTH: usize = 2;
 const TABULATION_DISPLAY_WIDTH: usize = 4;
