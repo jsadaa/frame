@@ -200,11 +200,12 @@ impl Label {
     ///
     /// # Panics
     ///
-    /// Panics if `message` does not fit on one line.
+    /// Panics if `message` is empty or does not fit on one line.
     pub fn new(span: Span, message: impl Into<String>) -> Self {
         let message = message.into();
 
         assert_text_fits_on_one_line(&message, "message of a label");
+        assert_not_empty(&message, "message of a label");
 
         Self { span, message }
     }
@@ -270,11 +271,13 @@ impl Diagnostic {
     ///
     /// # Panics
     ///
-    /// Panics if `title`, or the message of `primary`, does not fit on one line.
+    /// Panics if `title` is empty, or if `title` or the message of `primary` does not fit on
+    /// one line. The message of `primary` may be empty: it then counts as absent.
     pub fn new(code: RuleCode, title: impl Into<String>, primary: Primary) -> Self {
         let title = title.into();
 
         assert_text_fits_on_one_line(&title, "title");
+        assert_not_empty(&title, "title");
 
         if let Primary::Span {
             message: Some(message),
@@ -305,11 +308,12 @@ impl Diagnostic {
     ///
     /// # Panics
     ///
-    /// Panics if `reason` does not fit on one line.
+    /// Panics if `reason` is empty or does not fit on one line.
     pub fn with_reason(mut self, reason: impl Into<String>) -> Self {
         let reason = reason.into();
 
         assert_text_fits_on_one_line(&reason, "reason");
+        assert_not_empty(&reason, "reason");
 
         self.reason = Some(reason);
         self
@@ -319,11 +323,12 @@ impl Diagnostic {
     ///
     /// # Panics
     ///
-    /// Panics if `help` does not fit on one line.
+    /// Panics if `help` is empty or does not fit on one line.
     pub fn with_help(mut self, help: impl Into<String>) -> Self {
         let help = help.into();
 
         assert_text_fits_on_one_line(&help, "help");
+        assert_not_empty(&help, "help");
 
         self.help = Some(help);
         self
@@ -376,6 +381,15 @@ fn assert_text_fits_on_one_line(text: &str, field: &str) {
     assert!(
         !text.contains('\n'),
         "the {field} of a diagnostic must fit on one line: {text:?}"
+    );
+}
+
+/// Asserts that `text` is not empty: it would mean nothing, and the rendering would end its
+/// line with a space.
+fn assert_not_empty(text: &str, field: &str) {
+    assert!(
+        !text.is_empty(),
+        "the {field} of a diagnostic cannot be empty"
     );
 }
 
@@ -628,5 +642,50 @@ mod tests {
     fn refuses_a_help_on_two_lines() {
         let diagnostic = Diagnostic::new(INVALID_UTF8, "title", Primary::file(add_file("")));
         let _ = diagnostic.with_help("two\nlines");
+    }
+
+    #[test]
+    #[should_panic(expected = "the title of a diagnostic cannot be empty")]
+    fn refuses_an_empty_title() {
+        let _ = Diagnostic::new(INVALID_UTF8, "", Primary::file(add_file("")));
+    }
+
+    #[test]
+    #[should_panic(expected = "the message of a label of a diagnostic cannot be empty")]
+    fn refuses_an_empty_label() {
+        let span = Span::new(add_file("if a && b {\n}\n"), 3, 4);
+        Label::new(span, "");
+    }
+
+    #[test]
+    #[should_panic(expected = "the reason of a diagnostic cannot be empty")]
+    fn refuses_an_empty_reason() {
+        let diagnostic = Diagnostic::new(INVALID_UTF8, "title", Primary::file(add_file("")));
+        let _ = diagnostic.with_reason("");
+    }
+
+    #[test]
+    #[should_panic(expected = "the help of a diagnostic cannot be empty")]
+    fn refuses_an_empty_help() {
+        let diagnostic = Diagnostic::new(INVALID_UTF8, "title", Primary::file(add_file("")));
+        let _ = diagnostic.with_help("");
+    }
+
+    #[test]
+    fn primary_message_may_be_empty() {
+        let span = Span::new(add_file("if a && b {\n}\n"), 5, 7);
+        let diagnostic = Diagnostic::new(
+            REFUSED_TOKEN,
+            "`&&` is not an operator",
+            Primary::span_with_message(span, ""),
+        );
+
+        assert_eq!(
+            diagnostic.primary(),
+            &Primary::Span {
+                span,
+                message: Some(String::new()),
+            }
+        );
     }
 }
