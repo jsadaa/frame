@@ -2,8 +2,9 @@
 
 mod cli;
 
-use frame_diagnostics::render;
-use frame_driver::{Session, Target, TargetError, check_script, resolve_target};
+use frame_diagnostics::{Diagnostic, render};
+use frame_driver::{Target, TargetError, check_script, resolve_target};
+use frame_source::SourceMap;
 
 use crate::cli::Command;
 use std::{
@@ -119,16 +120,18 @@ fn check(target: Option<&Path>) -> Outcome {
 
     match check_script(&path) {
         Ok(session) if session.diagnostics().is_empty() => Outcome::Success(None),
-        Ok(session) => Outcome::Refused(render_diagnostics(&session)),
+        Ok(session) => Outcome::Refused(render_diagnostics(
+            session.diagnostics(),
+            session.source_map(),
+        )),
         Err(error) => Outcome::TargetError(error),
     }
 }
 
-fn render_diagnostics(session: &Session) -> String {
-    session
-        .diagnostics()
+fn render_diagnostics(diagnostics: &[Diagnostic], source_map: &SourceMap) -> String {
+    diagnostics
         .iter()
-        .map(|diagnostic| render(diagnostic, session.source_map()))
+        .map(|diagnostic| render(diagnostic, source_map))
         .collect::<Vec<String>>()
         .join("\n")
 }
