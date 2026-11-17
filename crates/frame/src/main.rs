@@ -143,8 +143,28 @@ fn render_diagnostics(diagnostics: &[Diagnostic], source_map: &SourceMap) -> Str
 
 #[cfg(test)]
 mod tests {
-    use super::{ExitCode, FRAME_VERSION, HELP, Outcome, Write, cli, exit_code, write_outcome};
-    use std::io;
+    use super::{
+        ExitCode, FRAME_VERSION, HELP, Outcome, TargetError, Write, cli, exit_code,
+        render_diagnostics, write_outcome,
+    };
+    use frame_diagnostics::{Diagnostic, Prefix, Primary, RuleCode};
+    use frame_source::{SourceMap, Span};
+    use std::{io, path::PathBuf};
+
+    const UNEXPECTED_CHARACTER: RuleCode = RuleCode::new(Prefix::Lex, 24);
+
+    const RENDERED_DIAGNOSTIC: &str = concat!(
+        "error[CNF-6]: source file is too large\n",
+        " --> big.fm\n",
+        "  |\n",
+        "  = reason: the limit is 16 MiB (16777216 bytes)\n",
+    );
+
+    fn missing_target() -> Outcome {
+        Outcome::TargetError(TargetError::NotFound {
+            path: PathBuf::from("missing.fm"),
+        })
+    }
 
     struct ClosedPipe;
     struct FailedDestination;
@@ -174,7 +194,7 @@ mod tests {
         let version = format!("frame {FRAME_VERSION}\n");
         let help = format!("{HELP}\n");
 
-        let cases: [(Outcome, &str, &str); 5] = [
+        let cases: [(Outcome, &str, &str); 8] = [
             (Outcome::Success(None), "", ""),
             (Outcome::Success(Some(HELP.to_string())), &help, ""),
             (
@@ -192,6 +212,21 @@ mod tests {
                 "",
                 "'frame run' is not implemented yet\n",
             ),
+            (
+                missing_target(),
+                "",
+                "error: target 'missing.fm' does not exist\nrun 'frame --help' for more information\n",
+            ),
+            (
+                Outcome::Refused(RENDERED_DIAGNOSTIC.to_string()),
+                "",
+                RENDERED_DIAGNOSTIC,
+            ),
+            (
+                Outcome::PackageNotImplementedYet("check"),
+                "",
+                "'frame check' on a package is not implemented yet\n",
+            ),
         ];
 
         for (outcome, expected_out, expected_err) in cases {
@@ -204,6 +239,80 @@ mod tests {
 
             assert_eq!(text_out, expected_out);
             assert_eq!(text_err, expected_err);
+        }
+    }
+
+    #[test]
+    fn diagnostics_are_separated_by_a_single_blank_line() {
+        let mut source_map = SourceMap::new();
+        let file = source_map.add(
+            "demo.fm".to_string(),
+            "let a = #1\nlet b = #2\n".to_string(),
+        );
+        let diagnostics = [
+            Diagnostic::new(
+                UNEXPECTED_CHARACTER,
+                "unexpected character `#`",
+                Primary::span(Span::new(file, 8, 9)),
+            ),
+            Diagnostic::new(
+                UNEXPECTED_CHARACTER,
+                "unexpected character `#`",
+                Primary::span(Span::new(file, 19, 20)),
+            ),
+        ];
+
+        assert_eq!(
+            render_diagnostics(&diagnostics, &source_map),
+            concat!(
+                "error[LEX-24]: unexpected character `#`\n",
+                " --> demo.fm:1:9\n",
+                "  |\n",
+                "1 | let a = #1\n",
+                "  |         ^\n",
+                "\n",
+                "error[LEX-24]: unexpected character `#`\n",
+                " --> demo.fm:2:9\n",
+                "  |\n",
+                "2 | let b = #2\n",
+                "  |         ^\n",
+            )
+        );
+    }
+
+    #[test]
+    fn each_outcome_has_its_exit_code() {
+        let cases: [(&str, Outcome, ExitCode); 6] = [
+            ("success", Outcome::Success(None), ExitCode::from(0)),
+            (
+                "usage error",
+                Outcome::UsageError(cli::UsageError::UnknownCommand("compile".to_string())),
+                ExitCode::from(2),
+            ),
+            ("target error", missing_target(), ExitCode::from(2)),
+            (
+                "refused",
+                Outcome::Refused(RENDERED_DIAGNOSTIC.to_string()),
+                ExitCode::from(1),
+            ),
+            (
+                "not implemented yet",
+                Outcome::NotImplementedYet("run"),
+                ExitCode::from(1),
+            ),
+            (
+                "package not implemented yet",
+                Outcome::PackageNotImplementedYet("check"),
+                ExitCode::from(1),
+            ),
+        ];
+
+        for (case, outcome, expected_code) in cases {
+            assert_eq!(
+                exit_code(&outcome, Ok(())),
+                expected_code,
+                "exit code of {case}"
+            );
         }
     }
 
