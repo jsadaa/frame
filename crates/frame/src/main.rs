@@ -2,9 +2,14 @@
 
 mod cli;
 
+use frame_diagnostics::{Diagnostic, render};
+use frame_driver::{Target, TargetError, check_script, resolve_target};
+use frame_source::SourceMap;
+
 use crate::cli::Command;
 use std::{
     io::{self, Write},
+    path::Path,
     process::ExitCode,
 };
 
@@ -31,9 +36,14 @@ enum Outcome {
     Success(Option<String>),
     /// The command line does not follow CLI-1.
     UsageError(cli::UsageError),
+    TargetError(frame_driver::TargetError),
+    Refused(String),
     /// The subcommand of this name is not implemented yet. Provisional: each subcommand
     /// loses this outcome at its milestone.
-    NotImplementedYet(&'static str),
+    NotImplementedYet {
+        name: &'static str,
+        extra: Option<&'static str>,
+    },
 }
 
 fn main() -> ExitCode {
@@ -58,9 +68,21 @@ fn main() -> ExitCode {
 fn write_outcome(outcome: &Outcome, out: &mut impl Write, err: &mut impl Write) -> io::Result<()> {
     match outcome {
         Outcome::Success(Some(text)) => writeln!(out, "{text}"),
-        Outcome::UsageError(e) => writeln!(err, "error: {e}\n{HELP_HINT}"),
-        Outcome::NotImplementedYet(name) => writeln!(err, "'frame {name}' is not implemented yet"),
         Outcome::Success(None) => Ok(()),
+        Outcome::UsageError(e) => {
+            writeln!(err, "error: {e}\n{HELP_HINT}")
+        }
+        Outcome::TargetError(e) => {
+            writeln!(err, "error: {e}\n{HELP_HINT}")
+        }
+        Outcome::Refused(diagnostics) => writeln!(err, "{diagnostics}"),
+        Outcome::NotImplementedYet { name, extra } => {
+            writeln!(
+                err,
+                "'frame {name}'{} is not implemented yet",
+                extra.unwrap_or("")
+            )
+        }
     }
 }
 
@@ -77,8 +99,8 @@ fn exit_code(outcome: &Outcome, written: io::Result<()>) -> ExitCode {
 
     match outcome {
         Outcome::Success(_) => ExitCode::from(0),
-        Outcome::NotImplementedYet(_) => ExitCode::from(1),
-        Outcome::UsageError(_) => ExitCode::from(2),
+        Outcome::NotImplementedYet { .. } => ExitCode::from(1),
+        Outcome::UsageError(_) | Outcome::TargetError(_) | Outcome::Refused(_) => ExitCode::from(2),
     }
 }
 
@@ -87,12 +109,59 @@ fn execute(command: &Command) -> Outcome {
         Command::Run { .. }
         | Command::Build { .. }
         | Command::Test { .. }
-        | Command::Check { .. }
         | Command::Fmt { .. }
-        | Command::Explain { .. } => Outcome::NotImplementedYet(command.name()),
+        | Command::Explain { .. } => Outcome::NotImplementedYet {
+            name: command.name(),
+            extra: None,
+        },
+        Command::Check { target } => check(target.as_deref()),
         Command::Help => Outcome::Success(Some(HELP.to_string())),
         Command::Version => Outcome::Success(Some(format!("frame {FRAME_VERSION}"))),
     }
+}
+
+fn check(target: Option<&Path>) -> Outcome {
+    let checked = resolve_target(target).and_then(|target| {
+        let path = match target {
+            Target::Script(path_buf) => path_buf,
+            Target::Package(_) => unreachable!("guarded in resolve_target for now"),
+        };
+
+        check_script(&path)
+    });
+
+    match checked {
+        Ok(session) => {
+            if !session.diagnostics().is_empty() {
+                return Outcome::Refused(serialize_diagnostics(
+                    session.diagnostics(),
+                    session.source_map(),
+                ));
+            }
+
+            Outcome::Success(None)
+        }
+        Err(error) => match error {
+            TargetError::NotFound { .. }
+            | TargetError::NotAScript { .. }
+            | TargetError::Unreadable { .. } => Outcome::TargetError(error),
+            TargetError::NotImplementedYet { message } => Outcome::NotImplementedYet {
+                name: "check",
+                extra: Some(message),
+            },
+        },
+    }
+}
+
+fn serialize_diagnostics(diagnostics: &[Diagnostic], source_map: &SourceMap) -> String {
+    let mut text = String::new();
+
+    for diagnostic in diagnostics {
+        text.push_str(&render(diagnostic, source_map));
+        text.push('\n');
+    }
+
+    text.trim_end_matches('\n').to_string()
 }
 
 #[cfg(test)]
@@ -142,7 +211,10 @@ mod tests {
                 "error: unknown command 'compile'\nrun 'frame --help' for more information\n",
             ),
             (
-                Outcome::NotImplementedYet("run"),
+                Outcome::NotImplementedYet {
+                    name: "run",
+                    extra: None,
+                },
                 "",
                 "'frame run' is not implemented yet\n",
             ),
