@@ -41,11 +41,6 @@ pub enum TargetError {
         /// todo!
         system_error: io::Error,
     },
-    /// todo!
-    NotImplementedYet {
-        /// todo!
-        message: &'static str,
-    },
 }
 
 impl std::fmt::Display for TargetError {
@@ -63,9 +58,6 @@ impl std::fmt::Display for TargetError {
             }
             Self::Unreadable { path, system_error } => {
                 write!(f, "cannot read '{}': {system_error}", path.display())
-            }
-            Self::NotImplementedYet { message } => {
-                write!(f, "{message}")
             }
         }
     }
@@ -104,12 +96,10 @@ impl Session {
 
 /// todo!
 pub fn resolve_target(target: Option<&Path>) -> Result<Target, TargetError> {
-    target.map_or(
-        Err(TargetError::NotImplementedYet {
-            message: " on a package",
-        }),
-        resolve_path,
-    )
+    match target {
+        Some(path) => resolve_path(path),
+        None => Ok(Target::Package(None)),
+    }
 }
 
 fn resolve_path(path: &Path) -> Result<Target, TargetError> {
@@ -120,9 +110,7 @@ fn resolve_path(path: &Path) -> Result<Target, TargetError> {
     }
 
     if path.is_dir() {
-        return Err(TargetError::NotImplementedYet {
-            message: " on a package",
-        });
+        return Ok(Target::Package(Some(path.to_path_buf())));
     }
 
     if path.extension() != Some(OsStr::new("fm")) {

@@ -44,6 +44,8 @@ enum Outcome {
         name: &'static str,
         extra: Option<&'static str>,
     },
+    /// todo!
+    PackageNotImplementedYet(&'static str),
 }
 
 fn main() -> ExitCode {
@@ -83,6 +85,7 @@ fn write_outcome(outcome: &Outcome, out: &mut impl Write, err: &mut impl Write) 
                 extra.unwrap_or("")
             )
         }
+        Outcome::PackageNotImplementedYet(message) => writeln!(err, "{message}"),
     }
 }
 
@@ -99,8 +102,10 @@ fn exit_code(outcome: &Outcome, written: io::Result<()>) -> ExitCode {
 
     match outcome {
         Outcome::Success(_) => ExitCode::from(0),
-        Outcome::NotImplementedYet { .. } => ExitCode::from(1),
-        Outcome::UsageError(_) | Outcome::TargetError(_) | Outcome::Refused(_) => ExitCode::from(2),
+        Outcome::NotImplementedYet { .. }
+        | Outcome::PackageNotImplementedYet(_)
+        | Outcome::Refused(_) => ExitCode::from(1),
+        Outcome::UsageError(_) | Outcome::TargetError(_) => ExitCode::from(2),
     }
 }
 
@@ -121,36 +126,27 @@ fn execute(command: &Command) -> Outcome {
 }
 
 fn check(target: Option<&Path>) -> Outcome {
-    let checked = resolve_target(target).and_then(|target| {
-        let path = match target {
-            Target::Script(path_buf) => path_buf,
-            Target::Package(_) => unreachable!("guarded in resolve_target for now"),
-        };
+    resolve_target(target)
+        .and_then(|target| match target {
+            Target::Script(path) => check_script(&path).map(|session| {
+                if !session.diagnostics().is_empty() {
+                    return Outcome::Refused(serialize_diagnostics(
+                        session.diagnostics(),
+                        session.source_map(),
+                    ));
+                }
 
-        check_script(&path)
-    });
-
-    match checked {
-        Ok(session) => {
-            if !session.diagnostics().is_empty() {
-                return Outcome::Refused(serialize_diagnostics(
-                    session.diagnostics(),
-                    session.source_map(),
-                ));
-            }
-
-            Outcome::Success(None)
-        }
-        Err(error) => match error {
+                Outcome::Success(None)
+            }),
+            Target::Package(_) => Ok(Outcome::PackageNotImplementedYet(
+                "'frame check' on a package is not implemented yet",
+            )),
+        })
+        .unwrap_or_else(|error| match error {
             TargetError::NotFound { .. }
             | TargetError::NotAScript { .. }
             | TargetError::Unreadable { .. } => Outcome::TargetError(error),
-            TargetError::NotImplementedYet { message } => Outcome::NotImplementedYet {
-                name: "check",
-                extra: Some(message),
-            },
-        },
-    }
+        })
 }
 
 fn serialize_diagnostics(diagnostics: &[Diagnostic], source_map: &SourceMap) -> String {
