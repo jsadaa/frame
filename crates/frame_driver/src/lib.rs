@@ -128,10 +128,13 @@ pub fn check_script(target: &Path) -> Result<Session, TargetError> {
     let mut diagnostics: Vec<Diagnostic> = Vec::new();
 
     match load_file(&mut source_map, target, &target.display().to_string()) {
-        Ok(_) => Ok(Session {
-            source_map,
-            diagnostics,
-        }),
+        Ok(_) => {
+            sort_diagnostics(&mut diagnostics, &source_map);
+            Ok(Session {
+                source_map,
+                diagnostics,
+            })
+        }
         Err(error) => match error {
             LoadError::Read { path, system_error } => {
                 Err(TargetError::Unreadable { path, system_error })
