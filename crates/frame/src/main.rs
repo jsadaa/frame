@@ -39,10 +39,7 @@ enum Outcome {
     Refused(String),
     /// The subcommand of this name is not implemented yet. Provisional: each subcommand
     /// loses this outcome at its milestone.
-    NotImplementedYet {
-        name: &'static str,
-        extra: Option<&'static str>,
-    },
+    NotImplementedYet(&'static str),
     /// todo!
     PackageNotImplementedYet(&'static str),
 }
@@ -73,12 +70,10 @@ fn write_outcome(outcome: &Outcome, out: &mut impl Write, err: &mut impl Write) 
         Outcome::UsageError(e) => writeln!(err, "error: {e}\n{HELP_HINT}"),
         Outcome::TargetError(e) => writeln!(err, "error: {e}\n{HELP_HINT}"),
         Outcome::Refused(diagnostics) => write!(err, "{diagnostics}"),
-        Outcome::NotImplementedYet { name, extra } => writeln!(
-            err,
-            "'frame {name}'{} is not implemented yet",
-            extra.unwrap_or("")
-        ),
-        Outcome::PackageNotImplementedYet(message) => writeln!(err, "{message}"),
+        Outcome::NotImplementedYet(name) => writeln!(err, "'frame {name}' is not implemented yet"),
+        Outcome::PackageNotImplementedYet(name) => {
+            writeln!(err, "'frame {name}' on a package is not implemented yet")
+        }
     }
 }
 
@@ -95,7 +90,7 @@ fn exit_code(outcome: &Outcome, written: io::Result<()>) -> ExitCode {
 
     match outcome {
         Outcome::Success(_) => ExitCode::from(0),
-        Outcome::NotImplementedYet { .. }
+        Outcome::NotImplementedYet(_)
         | Outcome::PackageNotImplementedYet(_)
         | Outcome::Refused(_) => ExitCode::from(1),
         Outcome::UsageError(_) | Outcome::TargetError(_) => ExitCode::from(2),
@@ -108,10 +103,7 @@ fn execute(command: &Command) -> Outcome {
         | Command::Build { .. }
         | Command::Test { .. }
         | Command::Fmt { .. }
-        | Command::Explain { .. } => Outcome::NotImplementedYet {
-            name: command.name(),
-            extra: None,
-        },
+        | Command::Explain { .. } => Outcome::NotImplementedYet(command.name()),
         Command::Check { target } => check(target.as_deref()),
         Command::Help => Outcome::Success(Some(HELP.to_string())),
         Command::Version => Outcome::Success(Some(format!("frame {FRAME_VERSION}"))),
@@ -121,11 +113,7 @@ fn execute(command: &Command) -> Outcome {
 fn check(target: Option<&Path>) -> Outcome {
     let path = match resolve_target(target) {
         Ok(Target::Script(path)) => path,
-        Ok(Target::Package(_)) => {
-            return Outcome::PackageNotImplementedYet(
-                "'frame check' on a package is not implemented yet",
-            );
-        }
+        Ok(Target::Package(_)) => return Outcome::PackageNotImplementedYet("check"),
         Err(error) => return Outcome::TargetError(error),
     };
 
@@ -192,10 +180,7 @@ mod tests {
                 "error: unknown command 'compile'\nrun 'frame --help' for more information\n",
             ),
             (
-                Outcome::NotImplementedYet {
-                    name: "run",
-                    extra: None,
-                },
+                Outcome::NotImplementedYet("run"),
                 "",
                 "'frame run' is not implemented yet\n",
             ),
