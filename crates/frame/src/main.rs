@@ -3,7 +3,7 @@
 mod cli;
 
 use frame_diagnostics::render;
-use frame_driver::{Session, Target, check_script, resolve_target};
+use frame_driver::{Session, Target, TargetError, check_script, resolve_target};
 
 use crate::cli::Command;
 use std::{
@@ -35,7 +35,7 @@ enum Outcome {
     Success(Option<String>),
     /// The command line does not follow CLI-1.
     UsageError(cli::UsageError),
-    TargetError(frame_driver::TargetError),
+    TargetError(TargetError),
     Refused(String),
     /// The subcommand of this name is not implemented yet. Provisional: each subcommand
     /// loses this outcome at its milestone.
