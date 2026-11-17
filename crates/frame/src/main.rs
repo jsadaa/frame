@@ -36,12 +36,15 @@ enum Outcome {
     Success(Option<String>),
     /// The command line does not follow CLI-1.
     UsageError(cli::UsageError),
+    /// The target cannot be worked on (CLI-2): a usage error.
     TargetError(TargetError),
+    /// The program is refused: the text is its diagnostics, rendered.
     Refused(String),
     /// The subcommand of this name is not implemented yet. Provisional: each subcommand
     /// loses this outcome at its milestone.
     NotImplementedYet(&'static str),
-    /// todo!
+    /// The subcommand of this name is not implemented yet on a package (milestone J19).
+    /// Provisional, like `NotImplementedYet`.
     PackageNotImplementedYet(&'static str),
 }
 
@@ -70,6 +73,7 @@ fn write_outcome(outcome: &Outcome, out: &mut impl Write, err: &mut impl Write) 
         Outcome::Success(None) => Ok(()),
         Outcome::UsageError(e) => writeln!(err, "error: {e}\n{HELP_HINT}"),
         Outcome::TargetError(e) => writeln!(err, "error: {e}\n{HELP_HINT}"),
+        // A rendering already ends with `\n`.
         Outcome::Refused(diagnostics) => write!(err, "{diagnostics}"),
         Outcome::NotImplementedYet(name) => writeln!(err, "'frame {name}' is not implemented yet"),
         Outcome::PackageNotImplementedYet(name) => {
@@ -128,6 +132,7 @@ fn check(target: Option<&Path>) -> Outcome {
     }
 }
 
+/// Renders the diagnostics, with a blank line between two: each rendering ends with `\n`.
 fn render_diagnostics(diagnostics: &[Diagnostic], source_map: &SourceMap) -> String {
     diagnostics
         .iter()
