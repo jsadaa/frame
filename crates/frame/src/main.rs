@@ -3,7 +3,7 @@
 mod cli;
 
 use frame_diagnostics::render;
-use frame_driver::{Session, Target, TargetError, check_script, resolve_target};
+use frame_driver::{Session, Target, check_script, resolve_target};
 
 use crate::cli::Command;
 use std::{
@@ -125,24 +125,21 @@ fn execute(command: &Command) -> Outcome {
 }
 
 fn check(target: Option<&Path>) -> Outcome {
-    resolve_target(target)
-        .and_then(|target| match target {
-            Target::Script(path) => check_script(&path).map(|session| {
-                if !session.diagnostics().is_empty() {
-                    return Outcome::Refused(render_diagnostics(&session));
-                }
-
-                Outcome::Success(None)
-            }),
-            Target::Package(_) => Ok(Outcome::PackageNotImplementedYet(
+    let path = match resolve_target(target) {
+        Ok(Target::Script(path)) => path,
+        Ok(Target::Package(_)) => {
+            return Outcome::PackageNotImplementedYet(
                 "'frame check' on a package is not implemented yet",
-            )),
-        })
-        .unwrap_or_else(|error| match error {
-            TargetError::NotFound { .. }
-            | TargetError::NotAScript { .. }
-            | TargetError::Unreadable { .. } => Outcome::TargetError(error),
-        })
+            );
+        }
+        Err(error) => return Outcome::TargetError(error),
+    };
+
+    match check_script(&path) {
+        Ok(session) if session.diagnostics().is_empty() => Outcome::Success(None),
+        Ok(session) => Outcome::Refused(render_diagnostics(&session)),
+        Err(error) => Outcome::TargetError(error),
+    }
 }
 
 fn render_diagnostics(session: &Session) -> String {
