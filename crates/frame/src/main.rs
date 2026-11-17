@@ -70,20 +70,14 @@ fn write_outcome(outcome: &Outcome, out: &mut impl Write, err: &mut impl Write) 
     match outcome {
         Outcome::Success(Some(text)) => writeln!(out, "{text}"),
         Outcome::Success(None) => Ok(()),
-        Outcome::UsageError(e) => {
-            writeln!(err, "error: {e}\n{HELP_HINT}")
-        }
-        Outcome::TargetError(e) => {
-            writeln!(err, "error: {e}\n{HELP_HINT}")
-        }
-        Outcome::Refused(diagnostics) => writeln!(err, "{diagnostics}"),
-        Outcome::NotImplementedYet { name, extra } => {
-            writeln!(
-                err,
-                "'frame {name}'{} is not implemented yet",
-                extra.unwrap_or("")
-            )
-        }
+        Outcome::UsageError(e) => writeln!(err, "error: {e}\n{HELP_HINT}"),
+        Outcome::TargetError(e) => writeln!(err, "error: {e}\n{HELP_HINT}"),
+        Outcome::Refused(diagnostics) => write!(err, "{diagnostics}"),
+        Outcome::NotImplementedYet { name, extra } => writeln!(
+            err,
+            "'frame {name}'{} is not implemented yet",
+            extra.unwrap_or("")
+        ),
         Outcome::PackageNotImplementedYet(message) => writeln!(err, "{message}"),
     }
 }
