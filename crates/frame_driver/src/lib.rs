@@ -123,11 +123,11 @@ fn resolve_path(path: &Path) -> Result<Target, TargetError> {
 }
 
 /// todo!
-pub fn check_script(target: &Path) -> Result<Session, TargetError> {
+pub fn check_script(path: &Path) -> Result<Session, TargetError> {
     let mut source_map = SourceMap::new();
     let mut diagnostics: Vec<Diagnostic> = Vec::new();
 
-    if let Err(error) = load_file(&mut source_map, target, &target.display().to_string()) {
+    if let Err(error) = load_file(&mut source_map, path, &path.display().to_string()) {
         diagnostics.push(load_error_diagnostic(error)?);
     }
 
