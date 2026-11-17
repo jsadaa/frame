@@ -77,14 +77,6 @@ pub struct Session {
 
 impl Session {
     /// todo!
-    pub fn new(source_map: SourceMap, diagnostics: Vec<Diagnostic>) -> Self {
-        Self {
-            source_map,
-            diagnostics,
-        }
-    }
-
-    /// todo!
     pub fn diagnostics(&self) -> &[Diagnostic] {
         &self.diagnostics
     }
@@ -134,23 +126,33 @@ fn resolve_path(path: &Path) -> Result<Target, TargetError> {
 pub fn check_script(target: &Path) -> Result<Session, TargetError> {
     let mut source_map = SourceMap::new();
     let mut diagnostics: Vec<Diagnostic> = Vec::new();
-    let load = load_file(&mut source_map, target, &target.display().to_string());
 
-    if load.is_ok() {
-        return Ok(Session::new(source_map, diagnostics));
+    match load_file(&mut source_map, target, &target.display().to_string()) {
+        Ok(_) => Ok(Session {
+            source_map,
+            diagnostics,
+        }),
+        Err(error) => match error {
+            LoadError::Read { path, system_error } => {
+                Err(TargetError::Unreadable { path, system_error })
+            }
+            LoadError::InvalidUtf8 { .. } | LoadError::TooLarge { .. } => {
+                diagnostics.push(error_to_diagnostic(&error));
+                sort_diagnostics(&mut diagnostics, &source_map);
+                Ok(Session {
+                    source_map,
+                    diagnostics,
+                })
+            }
+        },
     }
+}
 
-    if let Err(LoadError::Read { path, system_error }) = load {
-        return Err(TargetError::Unreadable { path, system_error });
-    }
-
-    diagnostics.push(error_to_diagnostic(&load.unwrap_err()));
+fn sort_diagnostics(diagnostics: &mut [Diagnostic], source_map: &SourceMap) {
     diagnostics.sort_by_key(|diagnostic| match diagnostic.primary() {
         Primary::File { file } => (source_map.file(*file).name(), None),
         Primary::Span { span, .. } => (source_map.file(span.file()).name(), Some(span.start())),
     });
-
-    Ok(Session::new(source_map, diagnostics))
 }
 
 fn error_to_diagnostic(error: &LoadError) -> Diagnostic {
