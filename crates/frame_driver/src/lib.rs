@@ -127,28 +127,16 @@ pub fn check_script(target: &Path) -> Result<Session, TargetError> {
     let mut source_map = SourceMap::new();
     let mut diagnostics: Vec<Diagnostic> = Vec::new();
 
-    match load_file(&mut source_map, target, &target.display().to_string()) {
-        Ok(_) => {
-            sort_diagnostics(&mut diagnostics, &source_map);
-            Ok(Session {
-                source_map,
-                diagnostics,
-            })
-        }
-        Err(error) => match error {
-            LoadError::Read { path, system_error } => {
-                Err(TargetError::Unreadable { path, system_error })
-            }
-            LoadError::InvalidUtf8 { .. } | LoadError::TooLarge { .. } => {
-                diagnostics.push(error_to_diagnostic(&error));
-                sort_diagnostics(&mut diagnostics, &source_map);
-                Ok(Session {
-                    source_map,
-                    diagnostics,
-                })
-            }
-        },
+    if let Err(error) = load_file(&mut source_map, target, &target.display().to_string()) {
+        diagnostics.push(load_error_diagnostic(error)?);
     }
+
+    sort_diagnostics(&mut diagnostics, &source_map);
+
+    Ok(Session {
+        source_map,
+        diagnostics,
+    })
 }
 
 fn sort_diagnostics(diagnostics: &mut [Diagnostic], source_map: &SourceMap) {
@@ -158,19 +146,21 @@ fn sort_diagnostics(diagnostics: &mut [Diagnostic], source_map: &SourceMap) {
     });
 }
 
-fn error_to_diagnostic(error: &LoadError) -> Diagnostic {
+fn load_error_diagnostic(error: LoadError) -> Result<Diagnostic, TargetError> {
     match error {
-        LoadError::Read { .. } => unreachable!("todo!"),
-        LoadError::InvalidUtf8 { span } => Diagnostic::new(
+        LoadError::Read { path, system_error } => {
+            Err(TargetError::Unreadable { path, system_error })
+        }
+        LoadError::InvalidUtf8 { span } => Ok(Diagnostic::new(
             RuleCode::new(Prefix::Lex, 1),
             "source file is not valid UTF-8",
-            Primary::span_with_message(*span, "invalid UTF-8 sequence"),
-        ),
-        LoadError::TooLarge { file, limit } => Diagnostic::new(
+            Primary::span_with_message(span, "invalid UTF-8 sequence"),
+        )),
+        LoadError::TooLarge { file, limit } => Ok(Diagnostic::new(
             RuleCode::new(Prefix::Cnf, 6),
             "source file is too large",
-            Primary::file(*file),
+            Primary::file(file),
         )
-        .with_reason(format!("the limit is {} MiB ({limit} bytes)", limit / MIB)),
+        .with_reason(format!("the limit is {} MiB ({limit} bytes)", limit / MIB))),
     }
 }
