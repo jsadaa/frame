@@ -2,9 +2,8 @@
 
 mod cli;
 
-use frame_diagnostics::{Diagnostic, render};
-use frame_driver::{Target, TargetError, check_script, resolve_target};
-use frame_source::SourceMap;
+use frame_diagnostics::render;
+use frame_driver::{Session, Target, TargetError, check_script, resolve_target};
 
 use crate::cli::Command;
 use std::{
@@ -130,10 +129,7 @@ fn check(target: Option<&Path>) -> Outcome {
         .and_then(|target| match target {
             Target::Script(path) => check_script(&path).map(|session| {
                 if !session.diagnostics().is_empty() {
-                    return Outcome::Refused(serialize_diagnostics(
-                        session.diagnostics(),
-                        session.source_map(),
-                    ));
+                    return Outcome::Refused(render_diagnostics(&session));
                 }
 
                 Outcome::Success(None)
@@ -149,15 +145,13 @@ fn check(target: Option<&Path>) -> Outcome {
         })
 }
 
-fn serialize_diagnostics(diagnostics: &[Diagnostic], source_map: &SourceMap) -> String {
-    let mut text = String::new();
-
-    for diagnostic in diagnostics {
-        text.push_str(&render(diagnostic, source_map));
-        text.push('\n');
-    }
-
-    text.trim_end_matches('\n').to_string()
+fn render_diagnostics(session: &Session) -> String {
+    session
+        .diagnostics()
+        .iter()
+        .map(|diagnostic| render(diagnostic, session.source_map()))
+        .collect::<Vec<String>>()
+        .join("\n")
 }
 
 #[cfg(test)]
