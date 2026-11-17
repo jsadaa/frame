@@ -3,7 +3,8 @@
 use std::{
     error::Error,
     ffi::OsStr,
-    io,
+    fs,
+    io::{self, ErrorKind},
     path::{Path, PathBuf},
 };
 
@@ -103,23 +104,30 @@ pub fn resolve_target(target: Option<&Path>) -> Result<Target, TargetError> {
 }
 
 fn resolve_path(path: &Path) -> Result<Target, TargetError> {
-    if !path.exists() {
-        return Err(TargetError::NotFound {
-            path: path.to_path_buf(),
-        });
-    }
+    match fs::metadata(path) {
+        Ok(metadata) => {
+            if metadata.is_dir() {
+                return Ok(Target::Package(Some(path.to_path_buf())));
+            }
 
-    if path.is_dir() {
-        return Ok(Target::Package(Some(path.to_path_buf())));
-    }
+            if path.extension() != Some(OsStr::new("fm")) {
+                return Err(TargetError::NotAScript {
+                    path: path.to_path_buf(),
+                });
+            }
 
-    if path.extension() != Some(OsStr::new("fm")) {
-        return Err(TargetError::NotAScript {
-            path: path.to_path_buf(),
-        });
+            Ok(Target::Script(path.to_path_buf()))
+        }
+        Err(error) => match error.kind() {
+            ErrorKind::NotFound => Err(TargetError::NotFound {
+                path: path.to_path_buf(),
+            }),
+            _ => Err(TargetError::Unreadable {
+                path: path.to_path_buf(),
+                system_error: error,
+            }),
+        },
     }
-
-    Ok(Target::Script(path.to_path_buf()))
 }
 
 /// todo!
@@ -136,7 +144,7 @@ pub fn check_script(target: &Path) -> Result<Session, TargetError> {
         return Err(TargetError::Unreadable { path, system_error });
     }
 
-    diagnostics.push(error_to_diagnostic(load.unwrap_err()));
+    diagnostics.push(error_to_diagnostic(&load.unwrap_err()));
     diagnostics.sort_by_key(|diagnostic| match diagnostic.primary() {
         Primary::File { file } => (source_map.file(*file).name(), None),
         Primary::Span { span, .. } => (source_map.file(span.file()).name(), Some(span.start())),
@@ -145,18 +153,18 @@ pub fn check_script(target: &Path) -> Result<Session, TargetError> {
     Ok(Session::new(source_map, diagnostics))
 }
 
-fn error_to_diagnostic(error: LoadError) -> Diagnostic {
+fn error_to_diagnostic(error: &LoadError) -> Diagnostic {
     match error {
         LoadError::Read { .. } => unreachable!("todo!"),
         LoadError::InvalidUtf8 { span } => Diagnostic::new(
             RuleCode::new(Prefix::Lex, 1),
             "source file is not valid UTF-8",
-            Primary::span_with_message(span, "invalid UTF-8 sequence"),
+            Primary::span_with_message(*span, "invalid UTF-8 sequence"),
         ),
         LoadError::TooLarge { file, limit } => Diagnostic::new(
             RuleCode::new(Prefix::Cnf, 6),
             "source file is too large",
-            Primary::file(file),
+            Primary::file(*file),
         )
         .with_reason(format!("the limit is {} MiB ({limit} bytes)", limit / MIB)),
     }
