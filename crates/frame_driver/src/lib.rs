@@ -186,3 +186,213 @@ fn load_error_diagnostic(error: LoadError) -> Result<Diagnostic, TargetError> {
         .with_reason(format!("the limit is {} MiB ({limit} bytes)", limit / MIB))),
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use std::{
+        io::{self, ErrorKind},
+        path::{Path, PathBuf},
+    };
+
+    use frame_diagnostics::{Diagnostic, Prefix, Primary, RuleCode};
+    use frame_source::{FileId, LoadError, MAX_SOURCE_SIZE, SourceMap, Span};
+
+    use super::{Target, TargetError, load_error_diagnostic, resolve_target, sort_diagnostics};
+
+    const ENCODING: RuleCode = RuleCode::new(Prefix::Lex, 1);
+    const TRANSLATION_LIMITS: RuleCode = RuleCode::new(Prefix::Cnf, 6);
+
+    fn fixtures() -> PathBuf {
+        Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures")
+    }
+
+    fn whole_file(file: FileId, title: &str) -> Diagnostic {
+        Diagnostic::new(TRANSLATION_LIMITS, title, Primary::file(file))
+    }
+
+    fn at_span(file: FileId, start: u32, end: u32, title: &str) -> Diagnostic {
+        Diagnostic::new(ENCODING, title, Primary::span(Span::new(file, start, end)))
+    }
+
+    #[test]
+    fn sorts_by_file_name_then_by_start_with_the_whole_file_first() {
+        let mut source_map = SourceMap::new();
+        // Added before `a.fm`: the order of the ids is not the order of the names.
+        let b = source_map.add("b.fm".to_string(), "let b = 1\n".to_string());
+        let a = source_map.add("a.fm".to_string(), "let a = 1\n".to_string());
+
+        let mut diagnostics = [
+            at_span(b, 0, 1, "b.fm at 0"),
+            at_span(a, 8, 9, "a.fm at 8"),
+            whole_file(b, "b.fm whole"),
+            at_span(b, 5, 6, "b.fm at 5"),
+            at_span(a, 2, 3, "a.fm at 2"),
+            whole_file(a, "a.fm whole"),
+        ];
+        sort_diagnostics(&mut diagnostics, &source_map);
+
+        assert_eq!(
+            diagnostics,
+            [
+                whole_file(a, "a.fm whole"),
+                at_span(a, 2, 3, "a.fm at 2"),
+                at_span(a, 8, 9, "a.fm at 8"),
+                whole_file(b, "b.fm whole"),
+                at_span(b, 0, 1, "b.fm at 0"),
+                at_span(b, 5, 6, "b.fm at 5"),
+            ]
+        );
+    }
+
+    #[test]
+    fn diagnostics_of_the_same_key_keep_their_order() {
+        let mut source_map = SourceMap::new();
+        let file = source_map.add("a.fm".to_string(), "let a = 1\n".to_string());
+
+        // Same start, the first one ending later: a key that took the end too would swap them.
+        let mut diagnostics = [
+            at_span(file, 4, 9, "at 4, first"),
+            whole_file(file, "whole, first"),
+            at_span(file, 4, 5, "at 4, second"),
+            whole_file(file, "whole, second"),
+        ];
+        sort_diagnostics(&mut diagnostics, &source_map);
+
+        assert_eq!(
+            diagnostics,
+            [
+                whole_file(file, "whole, first"),
+                whole_file(file, "whole, second"),
+                at_span(file, 4, 9, "at 4, first"),
+                at_span(file, 4, 5, "at 4, second"),
+            ]
+        );
+    }
+
+    #[test]
+    fn invalid_utf8_is_lex_1_on_the_first_replacement_character() {
+        let mut source_map = SourceMap::new();
+        let file = source_map.add(
+            "invalid.fm".to_string(),
+            "let a = 1\nlet \u{FFFD} = 2\n".to_string(),
+        );
+        let span = Span::new(file, 14, 17);
+
+        let diagnostic = load_error_diagnostic(LoadError::InvalidUtf8 { span })
+            .expect("an invalid file should give a diagnostic");
+
+        assert_eq!(
+            diagnostic,
+            Diagnostic::new(
+                ENCODING,
+                "source file is not valid UTF-8",
+                Primary::span_with_message(span, "invalid UTF-8 sequence"),
+            )
+        );
+    }
+
+    #[test]
+    fn too_large_is_cnf_6_on_the_whole_file_with_the_limit() {
+        let mut source_map = SourceMap::new();
+        let file = source_map.add("big.fm".to_string(), String::new());
+
+        let diagnostic = load_error_diagnostic(LoadError::TooLarge {
+            file,
+            limit: MAX_SOURCE_SIZE,
+        })
+        .expect("a file too large should give a diagnostic");
+
+        assert_eq!(
+            diagnostic,
+            Diagnostic::new(
+                TRANSLATION_LIMITS,
+                "source file is too large",
+                Primary::file(file),
+            )
+            .with_reason("the limit is 16 MiB (16777216 bytes)")
+        );
+    }
+
+    #[test]
+    fn fm_file_is_a_script() {
+        let path = fixtures().join("valid.fm");
+        let target = resolve_target(Some(&path));
+
+        let Ok(Target::Script(script)) = target else {
+            panic!("expected a script, got {target:?}");
+        };
+        assert_eq!(script, path);
+    }
+
+    #[test]
+    fn file_without_the_fm_extension_is_not_a_script() {
+        let path = fixtures().join("notes.txt");
+        let target = resolve_target(Some(&path));
+
+        let Err(TargetError::NotAScript { path: error_path }) = target else {
+            panic!("expected NotAScript, got {target:?}");
+        };
+        assert_eq!(error_path, path);
+    }
+
+    #[test]
+    fn missing_path_is_not_found() {
+        let path = fixtures().join("missing.fm");
+        let target = resolve_target(Some(&path));
+
+        let Err(TargetError::NotFound { path: error_path }) = target else {
+            panic!("expected NotFound, got {target:?}");
+        };
+        assert_eq!(error_path, path);
+    }
+
+    #[test]
+    fn directory_is_a_package() {
+        let path = fixtures();
+        let target = resolve_target(Some(&path));
+
+        let Ok(Target::Package(Some(directory))) = target else {
+            panic!("expected the package of a directory, got {target:?}");
+        };
+        assert_eq!(directory, path);
+    }
+
+    #[test]
+    fn no_target_is_the_nearest_package() {
+        let target = resolve_target(None);
+
+        assert!(
+            matches!(target, Ok(Target::Package(None))),
+            "expected the nearest package, got {target:?}"
+        );
+    }
+
+    #[test]
+    fn target_errors_name_the_target() {
+        let cases = [
+            (
+                TargetError::NotFound {
+                    path: PathBuf::from("missing.fm"),
+                },
+                "target 'missing.fm' does not exist",
+            ),
+            (
+                TargetError::NotAScript {
+                    path: PathBuf::from("notes.txt"),
+                },
+                "target 'notes.txt' is neither a '.fm' file nor a directory",
+            ),
+            (
+                TargetError::Unreadable {
+                    path: PathBuf::from("locked.fm"),
+                    system_error: io::Error::from(ErrorKind::PermissionDenied),
+                },
+                "cannot read 'locked.fm': permission denied",
+            ),
+        ];
+
+        for (error, expected) in cases {
+            assert_eq!(error.to_string(), expected, "message of {error:?}");
+        }
+    }
+}
