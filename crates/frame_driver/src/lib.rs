@@ -11,7 +11,7 @@ use std::{
 use frame_diagnostics::{Diagnostic, Prefix, Primary, RuleCode};
 use frame_source::{LoadError, SourceMap, load_file};
 
-const MIB: u64 = 1_048_576; // 1024 * 1024
+const MIB: u64 = 1024 * 1024;
 
 #[derive(Debug)]
 /// todo!
