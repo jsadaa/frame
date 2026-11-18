@@ -18,7 +18,7 @@ use frame_source::{LoadError, SourceMap, load_file};
 const MIB: u64 = 1024 * 1024;
 
 /// What a command works on (CLI-2).
-#[derive(Debug)]
+#[derive(Debug, PartialEq, Eq)]
 pub enum Target {
     /// A `.fm` file: a script (SCR-1).
     Script(PathBuf),
@@ -297,12 +297,9 @@ mod tests {
     #[test]
     fn fm_file_is_a_script() {
         let path = fixtures().join("valid.fm");
-        let target = resolve_target(Some(&path));
+        let target = resolve_target(Some(&path)).expect("an existing .fm file should resolve");
 
-        let Ok(Target::Script(script)) = target else {
-            panic!("expected a script, got {target:?}");
-        };
-        assert_eq!(script, path);
+        assert_eq!(target, Target::Script(path));
     }
 
     #[test]
@@ -330,22 +327,16 @@ mod tests {
     #[test]
     fn directory_is_a_package() {
         let path = fixtures();
-        let target = resolve_target(Some(&path));
+        let target = resolve_target(Some(&path)).expect("an existing directory should resolve");
 
-        let Ok(Target::Package(Some(directory))) = target else {
-            panic!("expected the package of a directory, got {target:?}");
-        };
-        assert_eq!(directory, path);
+        assert_eq!(target, Target::Package(Some(path)));
     }
 
     #[test]
     fn no_target_is_the_nearest_package() {
-        let target = resolve_target(None);
+        let target = resolve_target(None).expect("no target should resolve");
 
-        assert!(
-            matches!(target, Ok(Target::Package(None))),
-            "expected the nearest package, got {target:?}"
-        );
+        assert_eq!(target, Target::Package(None));
     }
 
     #[test]
