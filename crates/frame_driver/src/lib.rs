@@ -7,7 +7,7 @@
 use std::{
     error::Error,
     ffi::OsStr,
-    fs,
+    fmt, fs,
     io::{self, ErrorKind},
     path::{Path, PathBuf},
 };
@@ -49,19 +49,15 @@ pub enum TargetError {
     },
 }
 
-impl std::fmt::Display for TargetError {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+impl fmt::Display for TargetError {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
-            Self::NotFound { path } => {
-                write!(f, "target '{}' does not exist", path.display())
-            }
-            Self::NotAScript { path } => {
-                write!(
-                    f,
-                    "target '{}' is neither a '.fm' file nor a directory",
-                    path.display()
-                )
-            }
+            Self::NotFound { path } => write!(f, "target '{}' does not exist", path.display()),
+            Self::NotAScript { path } => write!(
+                f,
+                "target '{}' is neither a '.fm' file nor a directory",
+                path.display()
+            ),
             Self::Unreadable { path, system_error } => {
                 write!(f, "cannot read '{}': {system_error}", path.display())
             }
