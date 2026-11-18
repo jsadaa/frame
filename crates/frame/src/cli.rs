@@ -1,6 +1,6 @@
-//! Parsing of the `frame` command line (CLI-1 to CLI-9).
+//! Parsing the `frame` command line.
 //!
-//! [`parse_args`] turns the arguments into a [`Command`], or refuses them with a
+//! [`parse_args`] turns the arguments into a [`Command`], or rejects them with a
 //! [`UsageError`]. It is pure: it reads no environment and prints nothing.
 
 use std::{
@@ -12,56 +12,56 @@ use std::{
 /// A `frame` command line, parsed but not executed.
 #[derive(Debug, PartialEq, Eq)]
 pub enum Command {
-    /// `frame run [target [arguments...]]`: compiles in debug mode, then runs (CLI-3).
+    /// `frame run [target [arguments...]]`: compiles in debug mode, then runs.
     Run {
-        /// The script (`.fm`) or package directory; `None` means the enclosing package (CLI-2).
+        /// The script (`.fm`) or package directory. `None` means the enclosing package.
         target: Option<PathBuf>,
         /// The arguments that follow the target, passed to the program as given.
         program_args: Vec<OsString>,
     },
-    /// `frame build [target] [-o output]`: produces an executable (CLI-4).
+    /// `frame build [target] [-o output]`: builds an executable.
     Build {
-        /// The script (`.fm`) or package directory; `None` means the enclosing package (CLI-2).
+        /// The script (`.fm`) or package directory. `None` means the enclosing package.
         target: Option<PathBuf>,
-        /// Where `-o` writes the executable; `None` means the current directory.
+        /// Where to write the executable, from `-o`. `None` means the current directory.
         output: Option<PathBuf>,
     },
-    /// `frame check [target]`: checks the program and its tests (CLI-5).
+    /// `frame check [target]`: checks the program and its tests.
     Check {
-        /// The script (`.fm`) or package directory; `None` means the enclosing package (CLI-2).
+        /// The script (`.fm`) or package directory. `None` means the enclosing package.
         target: Option<PathBuf>,
     },
-    /// `frame test [target] [--name text] [--seed seed]`: runs the tests (CLI-6).
+    /// `frame test [target] [--name text] [--seed seed]`: runs the tests.
     Test {
-        /// The script (`.fm`) or package directory; `None` means the enclosing package (CLI-2).
+        /// The script (`.fm`) or package directory. `None` means the enclosing package.
         target: Option<PathBuf>,
         /// With `--name`, only the tests whose name contains this text run.
         name: Option<String>,
-        /// With `--seed`, the seed of the run, written as 1 to 16 hexadecimal digits.
+        /// With `--seed`, the seed for the run, given as 1 to 16 hexadecimal digits.
         seed: Option<u64>,
     },
-    /// `frame fmt [--check] [paths...]`: formats source files (CLI-7).
+    /// `frame fmt [--check] [paths...]`: formats source files.
     Fmt {
-        /// With `--check`, nothing is rewritten: the command names the files that would
+        /// With `--check`, nothing is rewritten. The command lists the files that would
         /// change, and fails if there are any.
         check: bool,
-        /// The files and directories to format; empty means the sources of the enclosing package.
+        /// The files and directories to format. Empty means the enclosing package's sources.
         paths: Vec<PathBuf>,
     },
-    /// `frame explain code`: explains a rule (CLI-8).
+    /// `frame explain code`: explains a rule.
     Explain {
         /// The code of the rule, such as `MUT-4`.
         code: String,
     },
-    /// `frame --help`: describes the subcommands (CLI-1).
+    /// `frame --help`: describes the subcommands.
     Help,
-    /// `frame --version`: gives the version of the toolchain (CLI-1).
+    /// `frame --version`: shows the toolchain version.
     Version,
 }
 
 impl Command {
-    /// Returns the word of the command line that selects this command: the subcommand,
-    /// `--help` or `--version` (CLI-1).
+    /// Returns the word that selects this command on the command line: the subcommand,
+    /// `--help` or `--version`.
     pub fn name(&self) -> &'static str {
         match self {
             Command::Run { .. } => "run",
@@ -76,7 +76,7 @@ impl Command {
     }
 }
 
-/// A command line that does not follow CLI-1: a usage error (CLI-9).
+/// An invalid command line, reported as a usage error.
 #[derive(Debug, PartialEq, Eq)]
 pub enum UsageError {
     /// An argument that must be text, such as a test name, a seed or a rule code, is not
@@ -84,22 +84,22 @@ pub enum UsageError {
     InvalidUtf8(String),
     /// No subcommand is given.
     MissingCommand,
-    /// The subcommand is not one of CLI-1.
+    /// The subcommand does not exist.
     UnknownCommand(String),
-    /// The seed is not 1 to 16 hexadecimal digits (CLI-6).
+    /// The seed is not 1 to 16 hexadecimal digits.
     InvalidSeed(String),
-    /// The subcommand lacks its required argument.
+    /// The subcommand is missing a required argument.
     CommandExpectsArgument {
         /// The subcommand.
         command: &'static str,
-        /// What the subcommand expects, article included, such as `a code`.
+        /// What the subcommand expects, with its article, such as `a code`.
         expected: &'static str,
     },
     /// The option is given without its value.
     OptionExpectsValue(&'static str),
     /// The option is given more than once.
     RepeatedOption(&'static str),
-    /// The argument has no place on the command line, such as a second target.
+    /// The argument is not expected here, such as a second target.
     UnexpectedArgument(String),
     /// The subcommand accepts no such option.
     UnknownOption(String),
@@ -140,7 +140,7 @@ impl fmt::Display for UsageError {
 ///
 /// # Errors
 ///
-/// Returns a [`UsageError`] when the arguments do not follow CLI-1.
+/// Returns an error if the arguments do not form a valid command line.
 pub fn parse_args(args: &[OsString]) -> Result<Command, UsageError> {
     let Some((subcommand, rest)) = args.split_first() else {
         return Err(UsageError::MissingCommand);
@@ -296,7 +296,7 @@ fn parse_option_value<T>(
     option: &'static str,
     convert: impl FnOnce(&OsStr) -> Result<T, UsageError>,
 ) -> Result<T, UsageError> {
-    // The repetition comes first, so that `-o a -o` reports it rather than the missing value.
+    // Check for repetition first, so that `-o a -o` reports it rather than the missing value.
     if current.is_some() {
         return Err(UsageError::RepeatedOption(option));
     }
@@ -307,7 +307,7 @@ fn parse_option_value<T>(
 }
 
 fn parse_seed(seed: String) -> Result<u64, UsageError> {
-    // `from_str_radix` accepts a leading `+`: the digits are checked first.
+    // `from_str_radix` accepts a leading `+`, so the digits are checked first.
     if !(1usize..=16usize).contains(&seed.chars().count())
         || !seed.chars().all(|c| c.is_ascii_hexdigit())
     {
@@ -329,8 +329,8 @@ fn lossy_string(arg: &OsStr) -> String {
     arg.to_string_lossy().into_owned()
 }
 
-// The encoded bytes, rather than `to_str`, so that a non-UTF-8 argument that starts with `-`
-// is an option too.
+// Checks the encoded bytes rather than `to_str`, so that a non-UTF-8 argument starting with
+// `-` still counts as an option.
 fn is_option(arg: &OsStr) -> bool {
     arg.as_encoded_bytes().starts_with(b"-")
 }

@@ -1,29 +1,29 @@
-//! Rendering a diagnostic as text, in the layout of DIA-6.
+//! Rendering diagnostics as text for the terminal.
 
 use super::{Diagnostic, Fix, Primary};
 use frame_source::{FileId, Location, SourceFile, SourceMap, Span};
 use std::iter;
 
-/// The margin when no line is shown, as for a whole file: that of a one-digit line number.
+/// The margin width when no line is shown, as for a whole file. It matches a one-digit line
+/// number.
 const FILE_LEVEL_MARGIN_WIDTH: usize = 2;
 const TAB_WIDTH: usize = 4;
 
-/// A span to underline under a line of source: its line, its place on the line, its mark and
-/// its message.
+/// A span to underline below a source line, with its mark and its message.
 struct Annotation<'a> {
     line_number: u32,
-    /// The number of characters before the span, on its line.
+    /// The number of characters before the span on its line.
     start: usize,
     char_count: usize,
     mark: char,
     message: Option<&'a str>,
 }
 
-/// A fix applied to a copy of the text of its file: the lines it changed, and its new text,
-/// to underline with `~` when it lies on one line.
+/// A fix applied to a copy of its file's text: the changed lines, and the new text to
+/// underline with `~` when it fits on one line.
 struct Correction {
-    /// The corrected copy, alone in its source map, which gives its lines without `\n` or
-    /// `\r\n`.
+    /// The corrected copy, in a source map of its own, so that `line_text` can split it into
+    /// lines.
     source_map: SourceMap,
     file: FileId,
     first_line_number: u32,
@@ -32,12 +32,15 @@ struct Correction {
 }
 
 impl Correction {
-    /// Applies `fix` to a copy of the text of `file`. The lines run from the one where the span
-    /// starts to the one where the new text ends, even when it ends with a newline.
+    /// Applies `fix` to a copy of `file`'s text.
+    ///
+    /// The corrected lines run from the line where the span starts to the line where the new
+    /// text ends, even when the new text ends with a newline.
     fn new(file: &SourceFile, fix: &Fix) -> Self {
         let span = fix.span();
         let replacement = fix.replacement();
-        // `line_col` checks the span, with its own messages, before `replace_range` uses it.
+        // Calling `line_col` first checks the span with its own panic messages, before
+        // `replace_range` uses it.
         let start_line_col = file.line_col(span.start());
         let end_line_col = file.line_col(span.end());
 
@@ -76,17 +79,23 @@ impl Correction {
 
 /// Renders `diagnostic` as text, in the layout of DIA-6.
 ///
-/// The text has the line `error[CODE]: title` and the location. Then come the lines of source
-/// where the primary span and the secondary labels start, in the order of the file, with `...`
-/// for the lines skipped between two of them. Under each line, one line per span, in the order
-/// of the columns, underlines the primary span by `^` and a label by `-`, then writes its
-/// message. Then come the reason, the help, and the fix: the corrected lines, with the new text
-/// underlined by `~` when it lies on one line. For a whole file, the location is the name of the
-/// file alone, and only the lines of the labels are shown. The line numbers are aligned on the
-/// largest one shown, fix included. Each line, the last one included, ends with a newline. In
-/// each text, the name of the file included, a tab is written as four spaces, and a character
-/// that LEX-2 refuses as `�`, so that neither the source nor a file name can control the
-/// terminal.
+/// The output starts with `error[CODE]: title` and the location, then shows each source line
+/// where a span starts, with its underlines:
+///
+/// - `^` marks the primary span and `-` a secondary label, each followed by its message.
+/// - Lines appear in file order, and `...` stands for the lines skipped in between.
+/// - Underlines on the same line are sorted by column.
+///
+/// The reason, help and fix come last. The fix shows the corrected lines, with the new text
+/// underlined with `~` when it fits on one line. Line numbers are right-aligned to the widest
+/// one shown, the fix's included.
+///
+/// A diagnostic about a whole file shows only the file name as its location, and only its
+/// labels' lines.
+///
+/// Every line ends with `\n`, including the last. In every text, file names included, tabs
+/// become four spaces and characters that LEX-2 forbids become `�`, so that nothing can send
+/// control sequences to the terminal.
 ///
 /// # Examples
 ///
@@ -123,9 +132,11 @@ impl Correction {
 ///
 /// # Panics
 ///
-/// Panics if the file of the primary location is unknown to `source_map`; if a label or the
-/// fix is in another file; or if a span, of the primary location, of a label or of the fix,
-/// ends past the end of its text or splits a character.
+/// Panics if:
+///
+/// - the primary location's file is not in `source_map`;
+/// - a label or the fix is in another file;
+/// - a span ends past the end of its text or splits a character.
 pub fn render(diagnostic: &Diagnostic, source_map: &SourceMap) -> String {
     let file_id = primary_file(diagnostic.primary());
     let file = source_map.file(file_id);
@@ -152,8 +163,9 @@ fn primary_file(primary: &Primary) -> FileId {
     }
 }
 
-/// Asserts that the labels and the fix are in the file of the primary location: another file
-/// would need a location of its own (J19).
+/// Asserts that the labels and the fix are in the primary location's file, since another file
+/// would need a location line of its own.
+// TODO(J19): revisit when a module spans several files.
 fn assert_in_primary_file(diagnostic: &Diagnostic, primary_file: FileId, source_map: &SourceMap) {
     let name = |file| source_map.file(file).name();
 
@@ -176,9 +188,10 @@ fn assert_in_primary_file(diagnostic: &Diagnostic, primary_file: FileId, source_
     }
 }
 
-/// Returns the spans to underline: the primary span, if any, then the labels, sorted in the
-/// order of the file. The sort is stable: at the same column, the primary span comes first,
-/// then the labels in the order they were added.
+/// Returns the spans to underline, in file order.
+///
+/// The sort is stable: at the same position, the primary span comes first, then the labels in
+/// the order they were added.
 fn annotations<'a>(diagnostic: &'a Diagnostic, file: &SourceFile) -> Vec<Annotation<'a>> {
     let primary = match diagnostic.primary() {
         Primary::File { .. } => None,
@@ -197,8 +210,8 @@ fn annotations<'a>(diagnostic: &'a Diagnostic, file: &SourceFile) -> Vec<Annotat
     annotations
 }
 
-/// Returns the annotation of `span`, on the line where it starts: from the start of the span to
-/// its end, or to the end of the line when the span goes on.
+/// Returns the annotation of `span` on the line where it starts. It runs to the end of the
+/// span, or to the end of the line if the span continues on the next ones.
 fn span_annotation<'a>(
     file: &SourceFile,
     span: Span,
@@ -225,8 +238,8 @@ fn span_annotation<'a>(
     }
 }
 
-/// Returns the width of the margin before each `|`, from the largest line number shown, fix
-/// included.
+/// Returns the width of the margin before each `|`, based on the largest line number shown,
+/// the fix's included.
 fn margin_width(annotations: &[Annotation], correction: Option<&Correction>) -> usize {
     annotations
         .iter()
@@ -235,12 +248,12 @@ fn margin_width(annotations: &[Annotation], correction: Option<&Correction>) -> 
         .max()
         .map_or(FILE_LEVEL_MARGIN_WIDTH, |largest_line_number| {
             let digit_count = largest_line_number.ilog10() as usize + 1;
-            // The line number, then a space: the `|` comes after the margin.
+            // Room for the line number and a space; the `|` comes after the margin.
             digit_count + 1
         })
 }
 
-/// Returns `path:line:column` for a span, and the name of the file alone for a whole file.
+/// Returns `path:line:column` for a span, or just the file name for a whole file.
 fn location(primary: &Primary, file: &SourceFile) -> String {
     match primary {
         Primary::File { .. } => file.name().to_string(),
@@ -266,8 +279,8 @@ fn location_line(location: &str, margin_width: usize) -> String {
     )
 }
 
-/// Returns the separator, then each line where an annotation starts, once, followed by the
-/// underline of each of its annotations; `...` stands for the lines skipped between two of them.
+/// Returns the separator, then each line where an annotation starts, followed by its
+/// underlines. `...` stands for the lines skipped in between.
 fn excerpt_lines(
     file: &SourceFile,
     annotations: &[Annotation],
@@ -300,16 +313,16 @@ fn excerpt_lines(
     lines
 }
 
-/// The line that stands for skipped lines: in the first column, without a margin.
+/// The line that stands for skipped lines. It starts in the first column, without a margin.
 fn ellipsis_line() -> String {
     String::from("...")
 }
 
 fn source_line(line_text: &str, line_number: u32, margin_width: usize) -> String {
-    // The number is aligned on the right, before the space that ends the margin.
+    // The number is right-aligned, before the space that ends the margin.
     let line_number_width = margin_width - 1;
     let mut line = format!("{line_number:>line_number_width$} |");
-    // An empty line ends at the bar: the rendering adds no trailing space.
+    // An empty line ends at the bar, without a trailing space.
     if !line_text.is_empty() {
         line.push(' ');
         line.push_str(&displayed_text(line_text));
@@ -340,9 +353,11 @@ fn underline_line(line_text: &str, annotation: &Annotation, margin_width: usize)
     line
 }
 
-/// Returns the spaces and the `mark`s that underline at most `char_count` characters of
-/// `line_text`, after its first `start` characters: the marks stop at the end of the line. A tab
-/// is four columns wide, and an empty span gets one mark.
+/// Returns the spaces and `mark`s that underline up to `char_count` characters of
+/// `line_text`, starting after its first `start` characters.
+///
+/// The marks stop at the end of the line. A tab is four columns wide, and an empty span still
+/// gets one mark.
 fn underline(line_text: &str, start: usize, char_count: usize, mark: char) -> String {
     let space_count = display_width(line_text, 0, start);
     let mark_count = display_width(line_text, start, char_count).max(1);
@@ -383,7 +398,7 @@ fn end_lines(
     lines
 }
 
-/// Returns the line `= fix:`, then the corrected lines, numbered, without a separator.
+/// Returns the `= fix:` line, then the numbered corrected lines, without a separator.
 fn fix_lines(correction: &Correction, margin_width: usize) -> Vec<String> {
     let file = correction.source_map.file(correction.file);
     let mut lines = vec![fix_heading_line(margin_width)];
@@ -396,7 +411,7 @@ fn fix_lines(correction: &Correction, margin_width: usize) -> Vec<String> {
         ));
     }
 
-    // A new text on one line leaves one corrected line: the `~` follow it.
+    // A new text on one line leaves a single corrected line, and the `~` go under it.
     if let Some(new_text) = &correction.new_text {
         lines.push(underline_line(
             file.line_text(new_text.line_number),
@@ -433,9 +448,11 @@ fn text_from_lines(lines: &[String]) -> String {
     text
 }
 
-/// Returns `text` as it is displayed: each tab as four spaces, so that the `^` can be aligned
-/// under it, and each character that LEX-2 refuses as `�`, so that the text cannot control
-/// the terminal, as a `\r` or an escape sequence would.
+/// Returns `text` as displayed.
+///
+/// Each tab becomes four spaces, so that the marks below can line up with it. Each character
+/// that LEX-2 forbids becomes `�`, so that the text cannot control the terminal as a `\r` or
+/// an escape sequence would.
 fn displayed_text(text: &str) -> String {
     let mut displayed = String::new();
     for c in text.chars() {
@@ -488,20 +505,20 @@ mod tests {
     const EXHAUSTIVENESS: RuleCode = RuleCode::new(Prefix::Pat, 15);
     const USELESS_TRY: RuleCode = RuleCode::new(Prefix::Err, 14);
 
-    /// Returns a source map that holds one file, and the id of that file.
+    /// Returns a source map holding one file, and that file's id.
     fn source_map_with_file(name: &str, text: &str) -> (SourceMap, FileId) {
         let mut source_map = SourceMap::new();
         let file = source_map.add(name.to_string(), text.to_string());
         (source_map, file)
     }
 
-    /// Returns a text whose line `line_number` is `line`, after empty lines; it ends with a
-    /// newline.
+    /// Returns a text whose line `line_number` is `line`, preceded by empty lines and
+    /// followed by a newline.
     fn text_with_line(line_number: usize, line: &str) -> String {
         format!("{}{line}\n", "\n".repeat(line_number - 1))
     }
 
-    /// Returns the span of the first `excerpt` in the text of `file`.
+    /// Returns the span of the first `excerpt` in `file`.
     fn span_of(excerpt: &str, source_map: &SourceMap, file: FileId) -> Span {
         let text = source_map.file(file).text();
         let Some(start) = text.find(excerpt) else {
@@ -511,7 +528,7 @@ mod tests {
         span_at(file, start, excerpt)
     }
 
-    /// Returns the span of the last `excerpt` in the text of `file`.
+    /// Returns the span of the last `excerpt` in `file`.
     fn last_span_of(excerpt: &str, source_map: &SourceMap, file: FileId) -> Span {
         let text = source_map.file(file).text();
         let Some(start) = text.rfind(excerpt) else {
@@ -521,7 +538,7 @@ mod tests {
         span_at(file, start, excerpt)
     }
 
-    /// Returns the span of `excerpt`, found at the byte `start` of the text of `file`.
+    /// Returns the span of `excerpt`, found at byte `start` in `file`.
     fn span_at(file: FileId, start: usize, excerpt: &str) -> Span {
         let to_offset =
             |index: usize| u32::try_from(index).expect("add() checked that offsets fit in u32");
@@ -529,13 +546,13 @@ mod tests {
         Span::new(file, to_offset(start), to_offset(start + excerpt.len()))
     }
 
-    /// Returns the empty span right after the first `excerpt` in the text of `file`.
+    /// Returns the empty span right after the first `excerpt` in `file`.
     fn empty_span_after(excerpt: &str, source_map: &SourceMap, file: FileId) -> Span {
         let end = span_of(excerpt, source_map, file).end();
         Span::new(file, end, end)
     }
 
-    /// Asserts that `diagnostic` renders as `expected_lines`, each ended by a newline.
+    /// Asserts that `diagnostic` renders as `expected_lines`, each followed by a newline.
     fn assert_render(diagnostic: &Diagnostic, source_map: &SourceMap, expected_lines: &[&str]) {
         let mut expected = String::new();
         for line in expected_lines {
@@ -1035,8 +1052,8 @@ mod tests {
 
     #[test]
     fn every_character_refused_by_lex_2_is_written_as_a_replacement_character() {
-        // The list of LEX-2, written from the rule rather than from the code. A CR is refused
-        // here: no line feed follows it.
+        // LEX-2's list, written from the rule rather than from the code. A CR is refused here,
+        // since no line feed follows it.
         let refused = ('\u{0}'..='\u{1F}')
             .filter(|&c| c != '\t' && c != '\n')
             .chain('\u{7F}'..='\u{9F}')
@@ -1071,7 +1088,7 @@ mod tests {
 
     #[test]
     fn neighbors_of_the_characters_refused_by_lex_2_are_written_as_they_are() {
-        // The character next to each range of LEX-2, outside it: a range that grows is seen too.
+        // The character just outside each LEX-2 range, so that a range that grows is caught.
         let allowed = [
             '\u{20}', '\u{7E}', '\u{A0}', '\u{061B}', '\u{061D}', '\u{200D}', '\u{2010}',
             '\u{2029}', '\u{202F}', '\u{2065}', '\u{206A}', '\u{FEFE}', '\u{FF00}',
@@ -1457,7 +1474,7 @@ mod tests {
 
     #[test]
     fn two_labels_at_the_same_place_keep_the_order_they_were_added() {
-        // Sorted by their messages, the two labels would swap: '`' comes before 'a'.
+        // A sort by message would swap the two labels, since '`' comes before 'a'.
         let (source_map, file) = source_map_with_file("demo.fm", "swap(mut xs[i], mut xs[j])\n");
         let diagnostic = Diagnostic::new(
             ARGUMENT_EXCLUSIVITY,

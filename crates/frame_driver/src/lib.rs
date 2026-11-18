@@ -1,8 +1,9 @@
-//! The driver: runs the phases of the compiler on a target, and gathers their diagnostics.
+//! The compiler driver: runs the compiler phases on a target and collects their
+//! diagnostics.
 //!
-//! [`resolve_target`] tells what a command works on (CLI-2); [`check_script`] loads a script
-//! and returns its [`Session`]. The driver writes nothing: the command renders the
-//! diagnostics and chooses the exit code.
+//! [`resolve_target`] works out what a command applies to, and [`check_script`] loads a
+//! script and returns its [`Session`]. The driver prints nothing: the command renders the
+//! diagnostics and picks the exit code.
 
 use std::{
     error::Error,
@@ -17,17 +18,18 @@ use frame_source::{LoadError, SourceMap, load_file};
 
 const MIB: u64 = 1024 * 1024;
 
-/// What a command works on (CLI-2).
+/// What a command works on: a script or a package.
 #[derive(Debug, PartialEq, Eq)]
 pub enum Target {
-    /// A `.fm` file: a script (SCR-1).
+    /// A script: a `.fm` file.
     Script(PathBuf),
-    /// A package (PKG-1): its directory, or `None` for the nearest package that contains
-    /// the current directory (S-171).
+    /// A package, by its directory. `None` means the nearest package that contains the
+    /// current directory (S-171).
     Package(Option<PathBuf>),
 }
 
-/// A target that a command cannot work on: a usage error (CLI-9).
+/// A target that a command cannot work on. The command reports it as a usage error
+/// (CLI-9).
 #[derive(Debug)]
 pub enum TargetError {
     /// Nothing exists at the path.
@@ -40,11 +42,11 @@ pub enum TargetError {
         /// The target, as given.
         path: PathBuf,
     },
-    /// The system cannot read the target, or tell what it is.
+    /// The target cannot be read, or the system cannot tell what it is.
     Unreadable {
         /// The target, as given.
         path: PathBuf,
-        /// The system error.
+        /// The underlying I/O error.
         system_error: io::Error,
     },
 }
@@ -67,8 +69,8 @@ impl fmt::Display for TargetError {
 
 impl Error for TargetError {}
 
-/// What the phases share: the files, and the diagnostics in the order of DIA-4. Only the
-/// driver makes one.
+/// The state shared by the compiler phases: the source files and the diagnostics. Only the
+/// driver creates one.
 #[derive(Debug)]
 pub struct Session {
     source_map: SourceMap,
@@ -76,23 +78,25 @@ pub struct Session {
 }
 
 impl Session {
-    /// Returns the diagnostics, in the order of DIA-4.
+    /// Returns the diagnostics, sorted by file name, then by position (DIA-4).
     pub fn diagnostics(&self) -> &[Diagnostic] {
         &self.diagnostics
     }
 
-    /// Returns the files that the diagnostics designate.
+    /// Returns the source files that the diagnostics point to.
     pub fn source_map(&self) -> &SourceMap {
         &self.source_map
     }
 }
 
-/// Tells what `target` designates (CLI-2): a `.fm` file is a script, a directory a package,
-/// and no target the nearest package.
+/// Works out what `target` refers to.
+///
+/// A `.fm` file is a script, a directory is a package, and no target means the nearest
+/// package (CLI-2).
 ///
 /// # Errors
 ///
-/// Returns a [`TargetError`] if nothing exists at `target`, if it is a file without the `.fm`
+/// Returns an error if nothing exists at `target`, if it is a file without the `.fm`
 /// extension, or if the system cannot tell what it is.
 pub fn resolve_target(target: Option<&Path>) -> Result<Target, TargetError> {
     match target {
@@ -102,8 +106,8 @@ pub fn resolve_target(target: Option<&Path>) -> Result<Target, TargetError> {
 }
 
 fn resolve_path(path: &Path) -> Result<Target, TargetError> {
-    // `Path::exists` answers `false` to any error, a permission denied included: it would say
-    // that an unreadable target does not exist.
+    // `Path::exists` returns `false` on any error, including permission denied, so an
+    // unreadable target would look missing.
     let path = path.to_path_buf();
 
     match fs::metadata(&path) {
@@ -115,12 +119,14 @@ fn resolve_path(path: &Path) -> Result<Target, TargetError> {
     }
 }
 
-/// Loads the script at `path`, named as given (DIA-5), and returns its session. A file that
-/// is not valid UTF-8 (LEX-1) or too large (CNF-6) gives a diagnostic.
+/// Loads the script at `path` and returns its session.
+///
+/// Diagnostics name the file as `path` was given (DIA-5). A file that is not valid UTF-8 or
+/// is too large gets a diagnostic, not an error.
 ///
 /// # Errors
 ///
-/// Returns [`TargetError::Unreadable`] if the system cannot read the file.
+/// Returns [`TargetError::Unreadable`] if the file cannot be read.
 pub fn check_script(path: &Path) -> Result<Session, TargetError> {
     let mut source_map = SourceMap::new();
     let mut diagnostics = Vec::new();
@@ -137,9 +143,10 @@ pub fn check_script(path: &Path) -> Result<Session, TargetError> {
     })
 }
 
-/// Sorts by file name, then by start of the primary location (DIA-4). A whole file has no
-/// start, and `None` sorts first: its diagnostic leads its file. The sort is stable, so
-/// diagnostics of the same key keep their order.
+/// Sorts diagnostics by file name, then by the start of their primary location (DIA-4).
+///
+/// A whole-file diagnostic has no start, and `None` sorts first, so it leads its file. The
+/// sort is stable: diagnostics with the same key keep their order.
 fn sort_diagnostics(diagnostics: &mut [Diagnostic], source_map: &SourceMap) {
     diagnostics.sort_by_key(|diagnostic| match diagnostic.primary() {
         Primary::File { file } => (source_map.file(*file).name(), None),
@@ -147,8 +154,10 @@ fn sort_diagnostics(diagnostics: &mut [Diagnostic], source_map: &SourceMap) {
     });
 }
 
-/// Turns a load error into its diagnostic. A file that cannot be read has none: it is not in
-/// the source map, and the error is the target's.
+/// Turns a load error into a diagnostic.
+///
+/// A file that cannot be read gets none: it is not in the source map, so the error is
+/// reported as a target error instead.
 fn load_error_diagnostic(error: LoadError) -> Result<Diagnostic, TargetError> {
     match error {
         LoadError::Read { path, system_error } => {
@@ -198,7 +207,7 @@ mod tests {
     #[test]
     fn sorts_by_file_name_then_by_start_with_the_whole_file_first() {
         let mut source_map = SourceMap::new();
-        // Added before `a.fm`: the order of the ids is not the order of the names.
+        // Added before `a.fm`, so that id order differs from name order.
         let b = source_map.add("b.fm".to_string(), "let b = 1\n".to_string());
         let a = source_map.add("a.fm".to_string(), "let a = 1\n".to_string());
 
@@ -230,7 +239,8 @@ mod tests {
         let mut source_map = SourceMap::new();
         let file = source_map.add("a.fm".to_string(), "let a = 1\n".to_string());
 
-        // Same start, the first one ending later: a key that took the end too would swap them.
+        // Same start, but the first one ends later: a key that included the end would swap
+        // them.
         let mut diagnostics = [
             at_span(file, 4, 9, "at 4, first"),
             whole_file(file, "whole, first"),

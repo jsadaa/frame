@@ -1,4 +1,4 @@
-//! Loading files through the public interface of `frame_source`.
+//! Tests for loading files, through the public API of `frame_source`.
 
 use std::{
     io,
@@ -71,7 +71,7 @@ fn missing_file_is_a_read_error() {
     assert_eq!(system_error.kind(), io::ErrorKind::NotFound);
 }
 
-// Under Unix, opening a directory succeeds, and reading it fails with this kind.
+// On Unix, opening a directory succeeds, but reading it fails with `IsADirectory`.
 #[cfg(unix)]
 #[test]
 fn directory_is_a_read_error() {

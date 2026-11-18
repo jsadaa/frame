@@ -30,21 +30,21 @@ Options:
 const FRAME_VERSION: &str = env!("CARGO_PKG_VERSION");
 const HELP_HINT: &str = "run 'frame --help' for more information";
 
-/// How a command ends: what `frame` writes, and the exit code of CLI-9.
+/// How a command ends, which decides what `frame` prints and its exit code (CLI-9).
 enum Outcome {
-    /// The command succeeded; its text, if any, goes to the standard output.
+    /// The command succeeded. Its text, if any, goes to standard output.
     Success(Option<String>),
-    /// The command line does not follow CLI-1.
+    /// The command line is invalid.
     UsageError(cli::UsageError),
-    /// The target cannot be worked on (CLI-2): a usage error.
+    /// The target cannot be worked on. This is a usage error too.
     TargetError(TargetError),
-    /// The program is refused: the text is its diagnostics, rendered.
+    /// The program is rejected. The text holds its rendered diagnostics.
     Refused(String),
-    /// The subcommand of this name is not implemented yet. Provisional: each subcommand
-    /// loses this outcome at its milestone.
+    /// The named subcommand is not implemented yet.
+    // TODO: remove once each subcommand is implemented, at its milestone.
     NotImplementedYet(&'static str),
-    /// The subcommand of this name is not implemented yet on a package (milestone J19).
-    /// Provisional, like `NotImplementedYet`.
+    /// The named subcommand is not implemented yet on a package.
+    // TODO(J19): remove once packages are supported.
     PackageNotImplementedYet(&'static str),
 }
 
@@ -65,8 +65,8 @@ fn main() -> ExitCode {
     exit_code(&outcome, written)
 }
 
-/// Writes the outcome: the help and the version on the standard output, every other
-/// message of `frame` on the standard error (CLI-9).
+/// Writes the outcome. The help and the version go to standard output, every other message
+/// to standard error (CLI-9).
 fn write_outcome(outcome: &Outcome, out: &mut impl Write, err: &mut impl Write) -> io::Result<()> {
     match outcome {
         Outcome::Success(Some(text)) => writeln!(out, "{text}"),
@@ -82,11 +82,13 @@ fn write_outcome(outcome: &Outcome, out: &mut impl Write, err: &mut impl Write) 
     }
 }
 
-/// Returns the exit code of the outcome, given the result of writing it. The table of
-/// CLI-9 lives here, and only here: a closed output gives 141; any other write error is
-/// ignored.
+/// Returns the exit code for `outcome`, given the result of writing it.
+///
+/// This is the only place that maps outcomes to the codes of CLI-9. A closed output gives
+/// 141, and any other write error is ignored.
 fn exit_code(outcome: &Outcome, written: io::Result<()>) -> ExitCode {
-    // 128 + 13: the code a shell shows for a program killed by SIGPIPE, a signal Rust ignores.
+    // 141 is 128 + 13: what a shell reports for a program killed by SIGPIPE, which Rust
+    // ignores.
     if let Err(error) = written
         && error.kind() == io::ErrorKind::BrokenPipe
     {
@@ -132,7 +134,8 @@ fn check(target: Option<&Path>) -> Outcome {
     }
 }
 
-/// Renders the diagnostics, with a blank line between two: each rendering ends with `\n`.
+/// Renders the diagnostics, separated by blank lines. Each rendering ends with `\n`, so
+/// joining them with `\n` is enough.
 fn render_diagnostics(diagnostics: &[Diagnostic], source_map: &SourceMap) -> String {
     diagnostics
         .iter()

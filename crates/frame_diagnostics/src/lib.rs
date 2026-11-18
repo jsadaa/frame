@@ -1,8 +1,11 @@
-//! Diagnostics: how the compiler reports a refused program, as data (DIA-1).
+//! Compiler diagnostics, as data.
 //!
-//! A [`Diagnostic`] names the violated rule by its [`RuleCode`], such as `MUT-4`, and says
-//! where and why the program is refused. It has no severity: every diagnostic is an error
-//! (DIA-2). [`render()`] writes it as text (DIA-6).
+//! A [`Diagnostic`] says which rule a program breaks, where, and why. The rule is named by
+//! its [`RuleCode`], such as `MUT-4`. There is no severity: every diagnostic is an error
+//! (DIA-2).
+//!
+//! [`render()`] turns a diagnostic into text for the terminal. Its documentation shows a
+//! complete example.
 
 mod render;
 
@@ -10,8 +13,7 @@ use frame_source::{FileId, Span};
 pub use render::render;
 use std::fmt;
 
-/// The prefix of a rule code, which names the area of the specification the rule belongs
-/// to; written in capitals, such as `MUT`.
+/// The part of the specification a rule belongs to, such as `MUT` in `MUT-4`.
 #[derive(Debug, PartialEq, Eq, Clone, Copy)]
 pub enum Prefix {
     /// Conformance.
@@ -115,7 +117,7 @@ impl fmt::Display for Prefix {
     }
 }
 
-/// The code of a rule of the specification, such as `MUT-4`: a prefix and a number.
+/// The code of a specification rule, such as `MUT-4`.
 #[derive(Debug, PartialEq, Eq, Clone, Copy)]
 pub struct RuleCode {
     prefix: Prefix,
@@ -123,8 +125,9 @@ pub struct RuleCode {
 }
 
 impl RuleCode {
-    /// Creates the code `prefix-number`; a `const fn`, so that a rule's code can be a
-    /// constant.
+    /// Creates the code `prefix-number`.
+    ///
+    /// This is a `const fn`, so that rule codes can be declared as constants.
     pub const fn new(prefix: Prefix, number: u32) -> Self {
         Self { prefix, number }
     }
@@ -146,31 +149,32 @@ impl fmt::Display for RuleCode {
     }
 }
 
-/// The primary location of a diagnostic: the span in cause, which the rendering underlines
-/// with `^`, or a whole file.
+/// Where a diagnostic points: either a span, underlined with `^` when rendered, or a whole
+/// file.
 #[derive(Debug, PartialEq, Eq, Clone)]
 pub enum Primary {
-    /// A whole file, for an error that no line shows, such as a file too large (CNF-6).
+    /// A whole file, for an error that no line can show, such as a file that is too large.
     File {
         /// The file.
         file: FileId,
     },
-    /// A span of the text.
+    /// A span of source text.
     Span {
-        /// The text in cause.
+        /// The offending text.
         span: Span,
-        /// The message written after the `^`, on one line: [`Diagnostic::new`] checks it.
+        /// The message printed after the `^` markers. It must fit on one line, which
+        /// [`Diagnostic::new`] checks.
         message: Option<String>,
     },
 }
 
 impl Primary {
-    /// Creates the primary location of a whole file.
+    /// Creates a primary location for a whole file.
     pub fn file(file: FileId) -> Self {
         Self::File { file }
     }
 
-    /// Creates the primary location of `span`, without a message.
+    /// Creates a primary location at `span`, without a message.
     pub fn span(span: Span) -> Self {
         Self::Span {
             span,
@@ -178,7 +182,7 @@ impl Primary {
         }
     }
 
-    /// Creates the primary location of `span`, with `message` written after the `^`.
+    /// Creates a primary location at `span`, with `message` printed after the `^` markers.
     pub fn span_with_message(span: Span, message: impl Into<String>) -> Self {
         Self::Span {
             span,
@@ -187,8 +191,9 @@ impl Primary {
     }
 }
 
-/// A secondary label: another span that explains the error, which the rendering underlines
-/// with `-`, and its message.
+/// A secondary label: another span that helps explain the error, with a message.
+///
+/// It is underlined with `-` when rendered.
 #[derive(Debug, PartialEq, Eq, Clone)]
 pub struct Label {
     span: Span,
@@ -196,7 +201,7 @@ pub struct Label {
 }
 
 impl Label {
-    /// Creates the label of `span`.
+    /// Creates a label on `span` with `message`.
     ///
     /// # Panics
     ///
@@ -221,7 +226,7 @@ impl Label {
     }
 }
 
-/// An automatic fix: the text that replaces a span (DIA-1).
+/// An automatic fix: a span and the text that replaces it.
 #[derive(Debug, PartialEq, Eq, Clone)]
 pub struct Fix {
     span: Span,
@@ -242,19 +247,19 @@ impl Fix {
         self.span
     }
 
-    /// Returns the text that replaces the span; unlike the other texts of a diagnostic, it
-    /// may cover several lines.
+    /// Returns the replacement text. Unlike the other texts of a diagnostic, it may cover
+    /// several lines.
     pub fn replacement(&self) -> &str {
         &self.replacement
     }
 }
 
-/// An error of the compiler: the violated rule, a title, where, and why (DIA-1).
+/// A compiler error: the violated rule, a title, where, and why.
 ///
-/// [`Diagnostic::new`] takes what every diagnostic has; the `with_` methods add the rest, in
-/// the same expression.
+/// [`Diagnostic::new`] takes what every diagnostic needs, and the `with_` methods add the
+/// optional parts in the same expression. The example of [`render()`] builds one.
 #[derive(Debug, PartialEq, Eq, Clone)]
-// Built, then dropped, a diagnostic is an error that the user never sees.
+// A diagnostic that is built and then dropped is an error the user never sees.
 #[must_use]
 pub struct Diagnostic {
     code: RuleCode,
@@ -267,12 +272,14 @@ pub struct Diagnostic {
 }
 
 impl Diagnostic {
-    /// Creates a diagnostic of the rule `code`, titled `title`, at `primary`.
+    /// Creates a diagnostic for the rule `code`, with a title, at `primary`.
+    ///
+    /// An empty message on `primary` is allowed, and counts as no message.
     ///
     /// # Panics
     ///
     /// Panics if `title` is empty, or if `title` or the message of `primary` does not fit on
-    /// one line. The message of `primary` may be empty: it then counts as absent.
+    /// one line.
     pub fn new(code: RuleCode, title: impl Into<String>, primary: Primary) -> Self {
         let title = title.into();
 
@@ -298,13 +305,13 @@ impl Diagnostic {
         }
     }
 
-    /// Adds a secondary label, after those already added.
+    /// Adds a secondary label after the existing ones.
     pub fn with_label(mut self, label: Label) -> Self {
         self.labels.push(label);
         self
     }
 
-    /// Sets the reason: why the rule refuses the program.
+    /// Sets the reason, which explains why the rule rejects the program.
     ///
     /// # Panics
     ///
@@ -319,7 +326,7 @@ impl Diagnostic {
         self
     }
 
-    /// Sets the help: a concrete correction, such as the text to write.
+    /// Sets the help, a concrete correction such as the code to write.
     ///
     /// # Panics
     ///
@@ -334,7 +341,8 @@ impl Diagnostic {
         self
     }
 
-    /// Sets the automatic fix; a diagnostic has one at most.
+    /// Sets the automatic fix. A diagnostic has at most one, so this replaces any previous
+    /// fix.
     pub fn with_fix(mut self, fix: Fix) -> Self {
         self.fix = Some(fix);
         self
@@ -376,7 +384,8 @@ impl Diagnostic {
     }
 }
 
-/// Asserts that `text` has no `\n`, not even a final one: the rendering ends each line itself.
+/// Asserts that `text` has no `\n`, not even at the end, since rendering adds line endings
+/// itself.
 fn assert_text_fits_on_one_line(text: &str, field: &str) {
     assert!(
         !text.contains('\n'),
@@ -384,8 +393,8 @@ fn assert_text_fits_on_one_line(text: &str, field: &str) {
     );
 }
 
-/// Asserts that `text` is not empty: it would mean nothing, and the rendering would end its
-/// line with a space.
+/// Asserts that `text` is not empty. An empty text says nothing, and would leave a trailing
+/// space in the rendering.
 fn assert_not_empty(text: &str, field: &str) {
     assert!(
         !text.is_empty(),
