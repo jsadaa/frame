@@ -1,4 +1,4 @@
-//! The `frame` command line interface integration tests.
+//! Integration tests for the `frame` command line.
 
 use std::{fs, path::Path, process::Command};
 
@@ -27,8 +27,8 @@ struct Outcome {
     code: Option<i32>,
 }
 
-/// Runs `frame` from the folder of the crate: a relative target, and the path that a
-/// diagnostic shows, are then known in advance.
+/// Runs `frame` from the crate's directory, so that relative targets and the paths that
+/// diagnostics show are known in advance.
 fn execute_command(args: &[&str]) -> Outcome {
     let output = Command::new(env!("CARGO_BIN_EXE_frame"))
         .args(args)
@@ -181,14 +181,14 @@ fn check_refuses_a_script_too_large() {
     );
 }
 
-// The permissions of the file are those of Unix.
+// File permissions are set the Unix way.
 #[cfg(unix)]
 #[test]
 fn check_refuses_an_unreadable_script_as_a_usage_error() {
     use std::os::unix::fs::PermissionsExt;
 
     let path = Path::new(env!("CARGO_TARGET_TMPDIR")).join("unreadable.fm");
-    // A previous run left the file without any permission: writing it again would fail.
+    // If a previous run left the file with no permissions, writing it again would fail.
     if path.exists() {
         fs::remove_file(&path).expect("the file of a previous run should be removed");
     }
@@ -208,7 +208,7 @@ fn check_refuses_an_unreadable_script_as_a_usage_error() {
     );
 }
 
-// The permissions of the directory are those of Unix.
+// Directory permissions are set the Unix way.
 #[cfg(unix)]
 #[test]
 fn check_refuses_a_script_in_an_unreadable_directory_as_a_usage_error() {
@@ -216,7 +216,7 @@ fn check_refuses_a_script_in_an_unreadable_directory_as_a_usage_error() {
 
     let directory = Path::new(env!("CARGO_TARGET_TMPDIR")).join("unreadable_directory");
     let path = directory.join("script.fm");
-    // A previous run may have left the directory without any permission.
+    // A previous run may have left the directory with no permissions.
     if directory.exists() {
         fs::set_permissions(&directory, fs::Permissions::from_mode(0o755))
             .expect("the permissions of the directory of a previous run should be restored");
@@ -230,7 +230,7 @@ fn check_refuses_a_script_in_an_unreadable_directory_as_a_usage_error() {
         .expect("the path of the script should be UTF-8");
 
     let outcome = execute_command(&["check", path]);
-    // Restored before any assertion: `cargo clean` cannot remove a directory without
+    // Restored before any assertion, since `cargo clean` cannot remove a directory with no
     // permissions.
     fs::set_permissions(&directory, fs::Permissions::from_mode(0o755))
         .expect("the permissions of the unreadable directory should be restored");
@@ -287,8 +287,8 @@ mod closed_pipe {
         process::{Command, Stdio},
     };
 
-    /// Returns a pipe whose reading end is closed before `frame` starts: its first write
-    /// fails every time, with no race between the two processes.
+    /// Returns a pipe whose read end is closed before `frame` starts, so that its first
+    /// write always fails, with no race between the two processes.
     fn closed_pipe() -> Stdio {
         let (reader, writer) = io::pipe().expect("a pipe should open");
         drop(reader);
