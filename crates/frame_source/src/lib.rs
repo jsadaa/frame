@@ -1,25 +1,42 @@
-//! Source files, and positions in their text.
+//! Source files and positions in their text.
 //!
-//! A [`SourceMap`] holds the files, which [`load_file`] reads from the disk; a [`Span`]
-//! designates a piece of a file's text by byte offsets. Lines and columns ([`LineCol`]) are
-//! computed from an offset, by the [`SourceFile`], only to show a position (DIA-5).
+//! A [`SourceMap`] holds the files of a compilation, each identified by a [`FileId`].
+//! [`load_file`] reads a file from disk and adds it to the map.
+//!
+//! Positions are byte offsets, and a [`Span`] is a range of them in one file. Lines and
+//! columns ([`LineCol`]) are computed from an offset only when a position is shown.
+//!
+//! # Examples
+//!
+//! ```
+//! use frame_source::{Location, SourceMap, Span};
+//!
+//! let mut source_map = SourceMap::new();
+//! let id = source_map.add(String::from("demo.fm"), String::from("let a = 1\nlet é = 2\n"));
+//! let file = source_map.file(id);
+//!
+//! // The second `=` is at byte 17 but at column 7, because `é` takes two bytes.
+//! let span = Span::new(id, 17, 18);
+//! let location = Location::new(file.name(), file.line_col(span.start()));
+//! assert_eq!(location.to_string(), "demo.fm:2:7");
+//! ```
 
 mod load;
 
 pub use load::{LoadError, MAX_SOURCE_SIZE, load_file};
 use std::fmt;
 
-/// The id of a file in a [`SourceMap`]; only [`SourceMap::add`] makes one.
+/// Identifies a file in a [`SourceMap`]. Only [`SourceMap::add`] creates one.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
 pub struct FileId(u32);
 
-/// A file of a [`SourceMap`]: its name, its text, and where its lines start.
+/// A file in a [`SourceMap`], with its name and its text.
 #[derive(Debug, Clone)]
 pub struct SourceFile {
     /// The name shown in locations, such as `src/main.fm`.
     name: String,
     text: String,
-    /// The byte offset where each line starts, in order; the first is 0, even for an empty
+    /// The offset of each line start, in order. The first is always 0, even for an empty
     /// text.
     line_starts: Vec<u32>,
 }
@@ -35,12 +52,13 @@ impl SourceFile {
         &self.text
     }
 
-    /// Returns the line and the column of a byte offset, both counted from 1, the column in
-    /// characters (DIA-5). The offset of the end of the text is valid.
+    /// Returns the line and column of a byte offset, both starting at 1.
+    ///
+    /// The column counts characters, not bytes. The end of the text is a valid offset.
     ///
     /// # Panics
     ///
-    /// Panics if `offset` is past the end of the text, or inside a character.
+    /// Panics if `offset` is past the end of the text or not on a character boundary.
     pub fn line_col(&self, offset: u32) -> LineCol {
         assert!(
             offset as usize <= self.text.len(),
@@ -68,8 +86,10 @@ impl SourceFile {
         }
     }
 
-    /// Returns the text of a line, counted from 1, without its line ending: `\n` or `\r\n`
-    /// (LEX-3). A lone `\r` stays in the text.
+    /// Returns the text of line `line_number`, counted from 1, without its line ending.
+    ///
+    /// Lines end with `\n` or `\r\n`. A lone `\r` does not end a line, so it stays in the
+    /// text (LEX-3).
     ///
     /// # Panics
     ///
@@ -84,7 +104,7 @@ impl SourceFile {
         let line_index = line_number - 1;
         let line_start = self.line_starts[line_index as usize];
 
-        // The last line has no next start: it ends with the text.
+        // The last line has no next start, so it ends where the text ends.
         let line_end = self
             .line_starts
             .get((line_index + 1) as usize)
@@ -104,15 +124,18 @@ impl SourceFile {
         line
     }
 
-    /// Returns the number of lines: one more than the number of line endings, so that an
-    /// empty text has one line.
+    /// Returns the number of lines.
+    ///
+    /// This is one more than the number of line endings: an empty text has one line, and
+    /// unlike with [`str::lines`], a final `\n` starts an empty last line.
     pub fn line_count(&self) -> u32 {
         usize_to_u32(self.line_starts.len())
     }
 }
 
-/// A line and a column, both counted from 1; the column counts characters, a tab as one
-/// (DIA-5).
+/// A line and a column, both starting at 1. Displays as `line:column`.
+///
+/// The column counts characters, and a tab counts as one (DIA-5).
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct LineCol {
     line: u32,
@@ -120,12 +143,12 @@ pub struct LineCol {
 }
 
 impl LineCol {
-    /// Returns the line, counted from 1.
+    /// Returns the line number, starting at 1.
     pub fn line(&self) -> u32 {
         self.line
     }
 
-    /// Returns the column, counted from 1.
+    /// Returns the column number, starting at 1.
     pub fn column(&self) -> u32 {
         self.column
     }
@@ -137,7 +160,7 @@ impl fmt::Display for LineCol {
     }
 }
 
-/// A position as diagnostics show it: `path:line:column` (DIA-5).
+/// A position as diagnostics show it, such as `src/main.fm:2:3`.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Location {
     name: String,
@@ -160,7 +183,7 @@ impl fmt::Display for Location {
     }
 }
 
-/// The source files of a compilation, each designated by its [`FileId`].
+/// The source files of a compilation, each identified by a [`FileId`].
 #[derive(Debug, Default)]
 pub struct SourceMap {
     files: Vec<SourceFile>,
@@ -172,12 +195,14 @@ impl SourceMap {
         Self::default()
     }
 
-    /// Adds a file, and returns its id. The starts of its lines are computed here, once.
+    /// Adds a file and returns its id.
+    ///
+    /// Line starts are computed here, once, so that line lookups don't rescan the text.
     ///
     /// # Panics
     ///
-    /// Panics if the text has `u32::MAX` bytes or more: its offsets, and the column of its
-    /// end, must fit in a `u32`.
+    /// Panics if the text is `u32::MAX` bytes or longer, so that every offset and column
+    /// fits in a `u32`.
     pub fn add(&mut self, name: String, text: String) -> FileId {
         assert!(
             text.len() < u32::MAX as usize,
@@ -199,11 +224,11 @@ impl SourceMap {
         id
     }
 
-    /// Returns the file of `id`.
+    /// Returns the file with this `id`.
     ///
     /// # Panics
     ///
-    /// Panics if no file of this source map has this `id`: it comes from another one.
+    /// Panics if `id` comes from another source map.
     pub fn file(&self, id: FileId) -> &SourceFile {
         let Some(file) = self.files.get(id.0 as usize) else {
             panic!("{id:?} is unknown to this source map");
@@ -213,8 +238,7 @@ impl SourceMap {
     }
 }
 
-/// A piece of the text of a file, between two byte offsets: `start` is included, `end`
-/// excluded.
+/// A byte range `start..end` in a file's text, with `end` excluded.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct Span {
     file: FileId,
@@ -223,7 +247,7 @@ pub struct Span {
 }
 
 impl Span {
-    /// Creates the span of `start..end` in `file`.
+    /// Creates the span `start..end` in `file`.
     ///
     /// # Panics
     ///
@@ -233,21 +257,22 @@ impl Span {
         Self { file, start, end }
     }
 
-    /// Returns `true` if the span is empty: it marks a point, such as an insertion.
+    /// Returns `true` if the span is empty. An empty span marks a point, such as an
+    /// insertion.
     pub fn is_empty(&self) -> bool {
         self.start == self.end
     }
 
-    /// Returns the length, in bytes.
+    /// Returns the length in bytes.
     pub fn len(&self) -> u32 {
         self.end - self.start
     }
 
-    /// Returns the smallest span that covers `self` and `other`, and what lies between.
+    /// Returns the smallest span that covers both `self` and `other`.
     ///
     /// # Panics
     ///
-    /// Panics if the two spans are in different files.
+    /// Panics if the spans are in different files.
     pub fn cover(&self, other: &Span) -> Span {
         assert!(
             self.file == other.file,
@@ -261,23 +286,23 @@ impl Span {
         }
     }
 
-    /// Returns the file.
+    /// Returns the id of the file.
     pub fn file(&self) -> FileId {
         self.file
     }
 
-    /// Returns the offset of the start, included.
+    /// Returns the start offset (included).
     pub fn start(&self) -> u32 {
         self.start
     }
 
-    /// Returns the offset of the end, excluded.
+    /// Returns the end offset (excluded).
     pub fn end(&self) -> u32 {
         self.end
     }
 }
 
-/// Returns the byte offset where each line starts: 0, then the offset after each `\n`.
+/// Returns the offset of each line start: 0, then the offset after each `\n`.
 fn compute_line_starts(text: &str) -> Vec<u32> {
     let mut starts: Vec<u32> = vec![0];
 
@@ -290,7 +315,7 @@ fn compute_line_starts(text: &str) -> Vec<u32> {
     starts
 }
 
-/// Converts a value bounded by the length of a text, which `SourceMap::add` checked to fit
+/// Converts an offset or a length within a text. [`SourceMap::add`] checked that these fit
 /// in a `u32`.
 fn usize_to_u32(n: usize) -> u32 {
     u32::try_from(n).expect("the value should fit in u32, as add() checked the text length")
@@ -319,8 +344,8 @@ mod tests {
         assert_eq!(file.line_count(), expected);
     }
 
-    /// Counts the line and the column of `offset` character by character, from the start
-    /// of the text: slow, but obviously right.
+    /// Computes the line and column of `offset` by walking the text one character at a
+    /// time: slow, but obviously right.
     fn naive_line_col(text: &str, offset: usize) -> LineCol {
         let mut line = 1;
         let mut column = 1;

@@ -1,5 +1,7 @@
-//! Loading a source file: read from the disk, checked as UTF-8 (LEX-1) and against the
-//! size limit (CNF-6), then added to a [`SourceMap`].
+//! Loading source files from disk.
+//!
+//! A file is read, checked against the size limit and decoded as UTF-8, then added to a
+//! [`SourceMap`].
 
 use std::{
     error::Error,
@@ -11,33 +13,36 @@ use std::{
 
 use super::{FileId, SourceMap, Span, usize_to_u32};
 
-/// The size limit of a source file, in bytes: 16 MiB, the least that CNF-6 lets an
-/// implementation accept.
+/// The largest source file accepted, in bytes.
+///
+/// This is 16 MiB, the minimum that CNF-6 requires an implementation to accept.
 pub const MAX_SOURCE_SIZE: u64 = 16 * 1024 * 1024;
 
 /// Why a source file could not be loaded.
 #[derive(Debug)]
 pub enum LoadError {
-    /// The system could not open or read the file. It is not added to the source map.
+    /// The file could not be opened or read. It is not added to the source map.
     Read {
         /// The path, as given to [`load_file`].
         path: PathBuf,
-        /// The system error.
+        /// The underlying I/O error.
         system_error: io::Error,
     },
-    /// The file is not valid UTF-8 (LEX-1). It is added with each invalid sequence replaced
-    /// by U+FFFD.
+    /// The file is not valid UTF-8.
+    ///
+    /// It is still added, with each invalid sequence replaced by U+FFFD, so that a
+    /// diagnostic can show it.
     InvalidUtf8 {
-        /// The span of the first U+FFFD in the text added; it starts at the first invalid
-        /// byte.
+        /// The first U+FFFD in the added text, where the first invalid byte was.
         span: Span,
     },
-    /// The file is larger than the limit (CNF-6). It is added with an empty text, so that a
-    /// diagnostic can name it.
+    /// The file is larger than the limit.
+    ///
+    /// It is still added, with an empty text, so that a diagnostic can name it.
     TooLarge {
-        /// The id of the file added.
+        /// The id of the added file.
         file: FileId,
-        /// The limit, in bytes.
+        /// The limit in bytes.
         limit: u64,
     },
 }
@@ -58,18 +63,21 @@ impl Display for LoadError {
 
 impl Error for LoadError {}
 
-/// Reads the file at `path`, adds it to `source_map` under `name`, and returns its id. A
-/// leading byte order mark is removed (LEX-1).
+/// Reads the file at `path`, adds it to `source_map` under `name`, and returns its id.
+///
+/// A leading byte order mark is removed (LEX-1).
 ///
 /// # Errors
 ///
-/// Returns a [`LoadError`] if the file cannot be read, is not valid UTF-8, or is larger than
-/// [`MAX_SOURCE_SIZE`]. In the last two cases, the file is added anyway, for the diagnostic.
+/// Returns an error if the file cannot be read, is not valid UTF-8, or is larger than
+/// [`MAX_SOURCE_SIZE`]. In the last two cases, the file is still added, so that a
+/// diagnostic can point to it.
 pub fn load_file(source_map: &mut SourceMap, path: &Path, name: &str) -> Result<FileId, LoadError> {
     load_file_with_limit(source_map, path, name, MAX_SOURCE_SIZE)
 }
 
-/// [`load_file`], with the size limit as a parameter, so that tests can use a few bytes.
+/// Same as [`load_file`], with the size limit as a parameter so that tests can use a tiny
+/// one.
 fn load_file_with_limit(
     source_map: &mut SourceMap,
     path: &Path,
@@ -94,7 +102,7 @@ fn load_file_with_limit(
             let end = invalid_offset + char::REPLACEMENT_CHARACTER.len_utf8();
             let file = source_map.add(name.to_string(), lossy_text);
 
-            // The span lies in the text just added, whose offsets `add` checked.
+            // The span is within the text just added, whose offsets `add` checked.
             Err(LoadError::InvalidUtf8 {
                 span: Span::new(file, usize_to_u32(invalid_offset), usize_to_u32(end)),
             })
@@ -106,21 +114,21 @@ fn load_file_with_limit(
 fn read_bounded(path: &Path, limit: u64) -> io::Result<Vec<u8>> {
     let mut bytes = Vec::new();
 
-    // One byte past the limit tells a file at the limit from a larger one, without reading
-    // the larger one whole.
+    // Reading one byte past the limit tells a file at the limit from a larger one, without
+    // reading all of a large file.
     File::open(path)?.take(limit + 1).read_to_end(&mut bytes)?;
 
     Ok(bytes)
 }
 
-/// Decodes `bytes` as UTF-8, without a leading byte order mark (LEX-1).
+/// Decodes `bytes` as UTF-8, after removing a leading byte order mark.
 ///
 /// # Errors
 ///
-/// If the bytes are not valid UTF-8, returns the offset of the first invalid byte, counted
-/// without the mark, and the text with each invalid sequence replaced by U+FFFD.
+/// If the bytes are not valid UTF-8, returns the offset of the first invalid byte (not
+/// counting the mark) and the text with each invalid sequence replaced by U+FFFD.
 fn decode(mut bytes: Vec<u8>) -> Result<String, (usize, String)> {
-    // A mark elsewhere stays: the lexer refuses it (LEX-2).
+    // A mark anywhere else stays, for the lexer to reject (LEX-2).
     if bytes.starts_with(&[0xEF, 0xBB, 0xBF]) {
         bytes.drain(..3);
     }
