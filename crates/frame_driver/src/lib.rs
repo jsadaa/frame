@@ -104,29 +104,14 @@ pub fn resolve_target(target: Option<&Path>) -> Result<Target, TargetError> {
 fn resolve_path(path: &Path) -> Result<Target, TargetError> {
     // `Path::exists` answers `false` to any error, a permission denied included: it would say
     // that an unreadable target does not exist.
-    match fs::metadata(path) {
-        Ok(metadata) => {
-            if metadata.is_dir() {
-                return Ok(Target::Package(Some(path.to_path_buf())));
-            }
+    let path = path.to_path_buf();
 
-            if path.extension() != Some(OsStr::new("fm")) {
-                return Err(TargetError::NotAScript {
-                    path: path.to_path_buf(),
-                });
-            }
-
-            Ok(Target::Script(path.to_path_buf()))
-        }
-        Err(error) => match error.kind() {
-            ErrorKind::NotFound => Err(TargetError::NotFound {
-                path: path.to_path_buf(),
-            }),
-            _ => Err(TargetError::Unreadable {
-                path: path.to_path_buf(),
-                system_error: error,
-            }),
-        },
+    match fs::metadata(&path) {
+        Ok(metadata) if metadata.is_dir() => Ok(Target::Package(Some(path))),
+        Ok(_) if path.extension() == Some(OsStr::new("fm")) => Ok(Target::Script(path)),
+        Ok(_) => Err(TargetError::NotAScript { path }),
+        Err(error) if error.kind() == ErrorKind::NotFound => Err(TargetError::NotFound { path }),
+        Err(system_error) => Err(TargetError::Unreadable { path, system_error }),
     }
 }
 
