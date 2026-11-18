@@ -9,3 +9,6 @@ publish.workspace = true
 workspace = true
 
 [dependencies]
+frame_diagnostics = { version = "0.1.0", path = "../frame_diagnostics" }
+frame_driver = { version = "0.1.0", path = "../frame_driver" }
+frame_source = { version = "0.1.0", path = "../frame_source" }

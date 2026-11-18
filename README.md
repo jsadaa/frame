@@ -52,7 +52,7 @@ cargo build --release
 target/release/frame --help
 ```
 
-The commands are listed by `frame --help`; none is implemented yet.
+The commands are listed by `frame --help`. Only `frame check` works yet, on a script: it reports a file that is not valid UTF-8 or too large.
 
 `scripts/check.sh` runs the checks that the CI runs on every push: formatting, Clippy, and the tests.
 
@@ -63,6 +63,7 @@ Frame is organized as a Cargo workspace with the following crates:
 - **frame**: the command-line tool
 - **frame_source**: source files, positions in their text, and loading a file from disk
 - **frame_diagnostics**: diagnostics as data (the rule code, the title, the locations, and an optional reason, help and fix), and their rendering as text
+- **frame_driver**: the driver, which runs the phases of the compiler on a target and gathers their diagnostics
 
 ## Use of AI
 
