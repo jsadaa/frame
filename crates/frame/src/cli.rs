@@ -6,7 +6,7 @@
 use std::{
     ffi::{OsStr, OsString},
     fmt,
-    path::PathBuf,
+    path::{Path, PathBuf},
 };
 
 /// A `frame` command line, parsed but not executed.
@@ -193,11 +193,14 @@ fn parse_build(args: &[OsString]) -> Result<Command, UsageError> {
     while let Some(arg) = iter.next() {
         match arg.to_str() {
             Some("-o") => {
-                output = Some(parse_option_value(iter.next(), &output, "-o", |v| {
-                    Ok(PathBuf::from(v))
-                })?);
+                output = Some(parse_option_value(
+                    iter.next(),
+                    output.as_ref(),
+                    "-o",
+                    |v| Ok(PathBuf::from(v)),
+                )?);
             }
-            _ => target = Some(parse_target(arg, &target)?),
+            _ => target = Some(parse_target(arg, target.as_deref())?),
         }
     }
 
@@ -208,7 +211,7 @@ fn parse_check(args: &[OsString]) -> Result<Command, UsageError> {
     let mut target: Option<PathBuf> = None;
 
     for arg in args {
-        target = Some(parse_target(arg, &target)?);
+        target = Some(parse_target(arg, target.as_deref())?);
     }
 
     Ok(Command::Check { target })
@@ -226,17 +229,20 @@ fn parse_test(args: &[OsString]) -> Result<Command, UsageError> {
             Some("--name") => {
                 name = Some(parse_option_value(
                     iter.next(),
-                    &name,
+                    name.as_ref(),
                     "--name",
                     parse_text,
                 )?);
             }
             Some("--seed") => {
-                seed = Some(parse_option_value(iter.next(), &seed, "--seed", |v| {
-                    parse_text(v).and_then(parse_seed)
-                })?);
+                seed = Some(parse_option_value(
+                    iter.next(),
+                    seed.as_ref(),
+                    "--seed",
+                    |v| parse_text(v).and_then(parse_seed),
+                )?);
             }
-            _ => target = Some(parse_target(arg, &target)?),
+            _ => target = Some(parse_target(arg, target.as_deref())?),
         }
     }
 
@@ -278,7 +284,7 @@ fn parse_explain(args: &[OsString]) -> Result<Command, UsageError> {
 
 // Utility parsers
 
-fn parse_target(arg: &OsStr, current: &Option<PathBuf>) -> Result<PathBuf, UsageError> {
+fn parse_target(arg: &OsStr, current: Option<&Path>) -> Result<PathBuf, UsageError> {
     if is_option(arg) {
         return Err(UsageError::UnknownOption(lossy_string(arg)));
     }
@@ -292,7 +298,7 @@ fn parse_target(arg: &OsStr, current: &Option<PathBuf>) -> Result<PathBuf, Usage
 
 fn parse_option_value<T>(
     value: Option<&OsString>,
-    current: &Option<T>,
+    current: Option<&T>,
     option: &'static str,
     convert: impl FnOnce(&OsStr) -> Result<T, UsageError>,
 ) -> Result<T, UsageError> {
