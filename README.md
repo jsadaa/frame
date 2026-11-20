@@ -63,6 +63,7 @@ Frame is organized as a Cargo workspace with the following crates:
 - **frame**: the command-line tool
 - **frame_source**: source files, positions in their text, and loading a file from disk
 - **frame_diagnostics**: diagnostics as data (the rule code, the title, the locations, and an optional reason, help and fix), and their rendering as text
+- **frame_syntax**: the lexer, which splits a file's text into tokens
 - **frame_driver**: the driver, which runs the phases of the compiler on a target and gathers their diagnostics
 
 ## Use of AI

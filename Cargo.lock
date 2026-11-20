@@ -29,3 +29,11 @@ dependencies = [
 [[package]]
 name = "frame_source"
 version = "0.1.0"
+
+[[package]]
+name = "frame_syntax"
+version = "0.1.0"
+dependencies = [
+ "frame_diagnostics",
+ "frame_source",
+]
