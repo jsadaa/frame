@@ -273,6 +273,7 @@ impl Span {
     /// # Panics
     ///
     /// Panics if the spans are in different files.
+    #[must_use]
     pub fn cover(&self, other: &Span) -> Span {
         assert!(
             self.file == other.file,
@@ -571,7 +572,7 @@ mod tests {
         expected = "cannot cover spans of two files: Span { file: FileId(1), start: 2, end: 5 } and Span { file: FileId(2), start: 7, end: 9 }"
     )]
     fn cover_panics_on_spans_of_two_files() {
-        Span::new(FileId(1), 2, 5).cover(&Span::new(FileId(2), 7, 9));
+        let _ = Span::new(FileId(1), 2, 5).cover(&Span::new(FileId(2), 7, 9));
     }
 
     #[test]
