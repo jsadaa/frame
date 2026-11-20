@@ -1,7 +1,7 @@
 //! Lexical analysis: splitting a file's text into tokens.
 //!
-//! [`tokenize`] reads a file and returns its tokens, with a diagnostic for each character it
-//! cannot read. [`dump_tokens`] writes tokens as text, one per line.
+//! [`tokenize`] reads a file and returns its tokens, with a diagnostic for each error it
+//! finds. [`dump_tokens`] writes tokens as text, one per line.
 //!
 //! # Examples
 //!
