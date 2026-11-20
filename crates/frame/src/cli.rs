@@ -352,7 +352,7 @@ mod tests {
 
     fn assert_fails_with(result: Result<Command, UsageError>, error: UsageError, message: &str) {
         assert_eq!(result, Err(error));
-        assert_eq!(format!("{}", result.unwrap_err()), message,)
+        assert_eq!(format!("{}", result.unwrap_err()), message);
     }
 
     #[test]
@@ -793,7 +793,7 @@ mod tests {
             assert_fails_with(
                 parse_args(&args),
                 UsageError::UnknownCommand(non_utf8.clone()),
-                format!("unknown command '{}'", non_utf8).as_str(),
+                format!("unknown command '{non_utf8}'").as_str(),
             );
         }
 
@@ -805,7 +805,7 @@ mod tests {
             assert_fails_with(
                 parse_args(&args),
                 UsageError::InvalidUtf8(non_utf8.clone()),
-                format!("argument '{}' is not valid UTF-8", non_utf8,).as_str(),
+                format!("argument '{non_utf8}' is not valid UTF-8").as_str(),
             );
         }
 
@@ -817,7 +817,7 @@ mod tests {
             assert_fails_with(
                 parse_args(&args),
                 UsageError::InvalidUtf8(non_utf8.clone()),
-                format!("argument '{}' is not valid UTF-8", non_utf8,).as_str(),
+                format!("argument '{non_utf8}' is not valid UTF-8").as_str(),
             );
         }
 
@@ -831,7 +831,7 @@ mod tests {
                     target: Some(PathBuf::from("a.fm")),
                     program_args: vec![non_utf8_arg()]
                 }),
-            )
+            );
         }
 
         #[test]
@@ -848,7 +848,7 @@ mod tests {
                 assert_fails_with(
                     parse_args(&args),
                     UsageError::UnexpectedArgument(lossy.clone()),
-                    format!("unexpected argument '{}'", lossy).as_str(),
+                    format!("unexpected argument '{lossy}'").as_str(),
                 );
             }
         }
@@ -868,7 +868,7 @@ mod tests {
                 assert_fails_with(
                     parse_args(&args),
                     UsageError::UnknownOption(lossy.clone()),
-                    format!("unknown option '{}'", lossy).as_str(),
+                    format!("unknown option '{lossy}'").as_str(),
                 );
             }
         }
@@ -907,7 +907,7 @@ mod tests {
                 ),
                 (
                     Command::Test {
-                        target: non_utf8_path.clone(),
+                        target: non_utf8_path,
                         name: None,
                         seed: None,
                     },

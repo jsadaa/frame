@@ -19,7 +19,7 @@ fn loads_a_valid_file() {
     let id = load_file(&mut source_map, &path, name).unwrap();
     let file = source_map.file(id);
     assert_eq!(name, file.name());
-    assert_eq!(file.text(), "let a = 1\n")
+    assert_eq!(file.text(), "let a = 1\n");
 }
 
 #[test]
@@ -30,7 +30,7 @@ fn removes_the_bom() {
     let id = load_file(&mut source_map, &path, name).unwrap();
     let file = source_map.file(id);
     assert_eq!(name, file.name());
-    assert_eq!(file.text(), "let a = 1\n")
+    assert_eq!(file.text(), "let a = 1\n");
 }
 
 #[test]
