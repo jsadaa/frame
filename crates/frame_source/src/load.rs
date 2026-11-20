@@ -164,7 +164,7 @@ mod tests {
         assert_eq!(
             decode(str_to_bytes("let x = 1")).unwrap(),
             String::from("let x = 1")
-        )
+        );
     }
 
     #[test]
@@ -177,7 +177,7 @@ mod tests {
         assert_eq!(
             decode([0xEF, 0xBB, 0xBF, b'a'].to_vec()).unwrap(),
             String::from("a")
-        )
+        );
     }
 
     #[test]
@@ -185,12 +185,12 @@ mod tests {
         assert_eq!(
             decode([b'a', 0xEF, 0xBB, 0xBF, b'b'].to_vec()).unwrap(),
             String::from("a\u{feff}b")
-        )
+        );
     }
 
     #[test]
     fn decode_removes_a_bom_alone() {
-        assert_eq!(decode([0xEF, 0xBB, 0xBF].to_vec()).unwrap(), String::new())
+        assert_eq!(decode([0xEF, 0xBB, 0xBF].to_vec()).unwrap(), String::new());
     }
 
     #[test]
@@ -256,7 +256,7 @@ mod tests {
         let id = load_file_with_limit(source_map, &path, "valid.fm", 10).unwrap();
         let file = source_map.file(id);
         assert_eq!(id, FileId(0));
-        assert_eq!(file.text(), "let a = 1\n")
+        assert_eq!(file.text(), "let a = 1\n");
     }
 
     #[test]
@@ -284,7 +284,7 @@ mod tests {
         assert_eq!(
             format!("{error}"),
             String::from("cannot read 'src/a.fm': entity not found")
-        )
+        );
     }
 
     #[test]
@@ -295,7 +295,7 @@ mod tests {
         assert_eq!(
             format!("{error}"),
             String::from("source file is not valid UTF-8")
-        )
+        );
     }
 
     #[test]
@@ -307,6 +307,6 @@ mod tests {
         assert_eq!(
             format!("{error}"),
             String::from("source file is too large: the limit is 10 bytes")
-        )
+        );
     }
 }

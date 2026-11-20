@@ -11,3 +11,19 @@ publish = false
 [workspace.lints.rust]
 unsafe_code = "forbid"
 missing_docs = "warn"
+
+# The pedantic and nursery groups stay off: these lints are picked one by one.
+[workspace.lints.clippy]
+# pedantic
+ref_option = "warn"
+return_self_not_must_use = "warn"
+semicolon_if_nothing_returned = "warn"
+uninlined_format_args = "warn"
+unnecessary_trailing_comma = "warn"
+# nursery
+branches_sharing_code = "warn"
+derive_partial_eq_without_eq = "warn"
+needless_pass_by_ref_mut = "warn"
+or_fun_call = "warn"
+redundant_clone = "warn"
+search_is_some = "warn"
