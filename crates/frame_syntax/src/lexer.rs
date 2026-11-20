@@ -7,6 +7,7 @@ use frame_diagnostics::{Diagnostic, Prefix, Primary, RuleCode};
 use frame_source::{FileId, SourceFile, SourceMap, Span};
 
 const UNEXPECTED_CHARACTER: RuleCode = RuleCode::new(Prefix::Lex, 24);
+const DOC_COMMENT_NOT_ALONE_ON_ITS_LINE: RuleCode = RuleCode::new(Prefix::Lex, 6);
 
 fn unexpected_character(c: char, span: Span) -> Diagnostic {
     Diagnostic::new(
@@ -14,6 +15,15 @@ fn unexpected_character(c: char, span: Span) -> Diagnostic {
         format!("unexpected character `{c}`"),
         Primary::span(span),
     )
+}
+
+fn doc_comment_not_alone_on_its_line(span: Span) -> Diagnostic {
+    Diagnostic::new(
+        DOC_COMMENT_NOT_ALONE_ON_ITS_LINE,
+        "doc comment is not alone on its line",
+        Primary::span(span),
+    )
+    .with_help("for an ordinary comment, write `//`")
 }
 
 /// A token: its kind, and the span of text it covers.
@@ -43,7 +53,7 @@ impl Token {
 ///
 /// Operators and punctuation are named by their shape, since only the parser knows what they
 /// mean: `|` is `Pipe`, not `Or`.
-// Not `Copy`: the kinds of literals will carry their value.
+// Not `Copy`: some kinds carry a value, such as a doc comment's text.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum TokenKind {
     /// `+`
@@ -134,10 +144,22 @@ pub enum TokenKind {
     Question,
     /// `!`
     Bang,
+    /// A doc comment, `///`, alone on its line.
+    ///
+    /// It holds the comment's text, after `///` and one optional space.
+    DocComment(String),
     /// A line ending: `\n` or `\r\n`.
     Newline,
     /// The end of the text. Its span is empty.
     Eof,
+}
+
+/// A delimiter that waits for its closing token.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum Open {
+    Paren,
+    Bracket,
+    Brace,
 }
 
 // Longest first: `find` stops at the first match, which must be the longest (LEX-7).
@@ -224,9 +246,14 @@ impl<'a> Cursor<'a> {
 
 struct Lexer<'a> {
     file: FileId,
+    text: &'a str,
     cursor: Cursor<'a>,
     diagnostics: Vec<Diagnostic>,
     tokens: Vec<Token>,
+    /// The delimiters not closed yet, innermost last.
+    open_delimiters: Vec<Open>,
+    /// How many delimiters of each kind `open_delimiters` holds, indexed by `Open as usize`.
+    open_counts: [usize; 3],
 }
 
 impl<'a> Lexer<'a> {
@@ -238,9 +265,12 @@ impl<'a> Lexer<'a> {
 
         Self {
             file,
+            text,
             cursor,
             diagnostics: Vec::new(),
             tokens: Vec::new(),
+            open_delimiters: Vec::new(),
+            open_counts: [0; 3],
         }
     }
 
@@ -254,14 +284,22 @@ impl<'a> Lexer<'a> {
                 }
                 '\n' | '\r' => {
                     if let Some(token) = self.read_newline() {
-                        self.tokens.push(token);
+                        if self.keeps_newline() {
+                            self.tokens.push(token);
+                        }
                     } else {
                         // TODO(J02): refuse a lone `\r` as a forbidden character (LEX-2).
                         self.skip_unexpected(c);
                     }
                 }
+                '/' if self.cursor.second() == Some('/') => {
+                    if let Some(token) = self.read_comment() {
+                        self.tokens.push(token);
+                    }
+                }
                 _ => {
                     if let Some(token) = self.read_operator() {
+                        self.track_delimiter(token.kind());
                         self.tokens.push(token);
                     } else {
                         self.skip_unexpected(c);
@@ -321,6 +359,47 @@ impl<'a> Lexer<'a> {
             })
     }
 
+    /// Reads a comment, from `//` to the end of the line.
+    ///
+    /// Only a doc comment alone on its line gives a token. Any other doc comment is reported.
+    fn read_comment(&mut self) -> Option<Token> {
+        let start = self.cursor.position();
+
+        self.cursor.advance();
+        self.cursor.advance();
+        let is_doc = self.cursor.first() == Some('/') && self.cursor.second() != Some('/');
+        self.skip_until_newline();
+
+        if !is_doc {
+            return None;
+        }
+
+        let span = self.span_from(start);
+        let before = &self.text[..start];
+        let line_before = before.rsplit_once('\n').map_or(before, |(_, line)| line);
+
+        if !line_before.chars().all(|c| matches!(c, ' ' | '\t')) {
+            self.diagnostics
+                .push(doc_comment_not_alone_on_its_line(span));
+            return None;
+        }
+
+        let text = &self.text[start + "///".len()..self.cursor.position()];
+        let text = text.strip_prefix(' ').unwrap_or(text);
+
+        Some(Token::new(TokenKind::DocComment(text.to_string()), span))
+    }
+
+    /// Skips the rest of the line, up to its line ending.
+    fn skip_until_newline(&mut self) {
+        while let Some(c) = self.cursor.first() {
+            if c == '\n' || (c == '\r' && self.cursor.second() == Some('\n')) {
+                break;
+            }
+            self.cursor.advance();
+        }
+    }
+
     /// Skips `c`, which starts no token, and reports it.
     fn skip_unexpected(&mut self, c: char) {
         let start = self.cursor.position();
@@ -336,6 +415,57 @@ impl<'a> Lexer<'a> {
             usize_to_u32(start),
             usize_to_u32(self.cursor.position()),
         )
+    }
+
+    /// Returns whether a newline read now gives a token: not inside `(` or `[`, and not right
+    /// after another newline.
+    fn keeps_newline(&self) -> bool {
+        let inside_parens_or_brackets = matches!(
+            self.open_delimiters.last(),
+            Some(Open::Paren | Open::Bracket)
+        );
+        let after_newline = matches!(
+            self.tokens.last().map(Token::kind),
+            Some(TokenKind::Newline)
+        );
+
+        !inside_parens_or_brackets && !after_newline
+    }
+
+    /// Updates the open delimiters after a token of kind `kind`.
+    fn track_delimiter(&mut self, kind: &TokenKind) {
+        match kind {
+            TokenKind::OpenParen => self.open(Open::Paren),
+            TokenKind::OpenBracket => self.open(Open::Bracket),
+            TokenKind::OpenBrace => self.open(Open::Brace),
+            TokenKind::CloseParen => self.close(Open::Paren),
+            TokenKind::CloseBracket => self.close(Open::Bracket),
+            TokenKind::CloseBrace => self.close(Open::Brace),
+            _ => {}
+        }
+    }
+
+    fn open(&mut self, delimiter: Open) {
+        self.open_delimiters.push(delimiter);
+        self.open_counts[delimiter as usize] += 1;
+    }
+
+    /// Closes `delimiter`, and any delimiter left open inside it.
+    ///
+    /// Without an open `delimiter`, nothing changes: a missing `)` does not turn every later
+    /// line ending into a space. The counts tell it at once; a search through the stack would
+    /// make `((((…]]]]` quadratic.
+    fn close(&mut self, delimiter: Open) {
+        if self.open_counts[delimiter as usize] == 0 {
+            return;
+        }
+
+        while let Some(open) = self.open_delimiters.pop() {
+            self.open_counts[open as usize] -= 1;
+            if open == delimiter {
+                break;
+            }
+        }
     }
 }
 
@@ -361,7 +491,11 @@ impl Lexed {
 /// Splits `file`'s text into tokens.
 ///
 /// - Spaces and tabs only separate tokens.
-/// - Each line ending, `\n` or `\r\n`, gives a newline token.
+/// - A line ending, `\n` or `\r\n`, gives a newline token, unless the innermost open
+///   delimiter is `(` or `[`. Consecutive newline tokens merge into the first.
+/// - A comment runs from `//` to the end of the line, and gives no token.
+/// - A doc comment, `///`, gives a token if it is alone on its line, and a diagnostic
+///   otherwise.
 /// - Operators and punctuation are read as the longest token that matches: `<<=` is one
 ///   token, not `<<` then `=`.
 /// - Any other character gets a diagnostic, and reading goes on after it.
@@ -378,14 +512,15 @@ pub fn tokenize(source_map: &SourceMap, file: FileId) -> Lexed {
 
 /// Writes tokens as text, one per line.
 ///
-/// A line gives the token's start as `line:column`, then its kind and its text, both written
-/// by `Debug`:
+/// A line gives the token's start as `line:column`, then its kind, with its value if it has
+/// one, and its text, both written by `Debug`:
 ///
 /// ```text
-/// 1:1 Plus "+"
-/// 1:3 ShlEq "<<="
-/// 1:6 Newline "\n"
-/// 2:1 Eof ""
+/// 1:1 DocComment("Sums.") "/// Sums."
+/// 1:10 Newline "\n"
+/// 2:1 Plus "+"
+/// 2:3 ShlEq "<<="
+/// 2:6 Eof ""
 /// ```
 ///
 /// # Panics
@@ -413,20 +548,45 @@ fn usize_to_u32(value: usize) -> u32 {
 mod tests {
     use super::{dump_tokens, tokenize};
     use frame_diagnostics::{Diagnostic, Prefix, Primary, RuleCode};
-    use frame_source::{SourceMap, Span};
+    use frame_source::{FileId, SourceMap, Span};
     use std::ops::Range;
 
-    const UNEXPECTED_CHARACTER: RuleCode = RuleCode::new(Prefix::Lex, 24);
+    use ExpectedDiagnostic::{DocCommentNotAlone, UnexpectedCharacter};
+
+    /// A diagnostic the lexer should report, with its byte range.
+    ///
+    /// Titles and helps are written out here, apart from the lexer's code.
+    enum ExpectedDiagnostic {
+        UnexpectedCharacter(char, Range<u32>),
+        DocCommentNotAlone(Range<u32>),
+    }
+
+    impl ExpectedDiagnostic {
+        fn to_diagnostic(&self, file: FileId) -> Diagnostic {
+            match self {
+                UnexpectedCharacter(c, range) => Diagnostic::new(
+                    RuleCode::new(Prefix::Lex, 24),
+                    format!("unexpected character `{c}`"),
+                    Primary::span(Span::new(file, range.start, range.end)),
+                ),
+                DocCommentNotAlone(range) => Diagnostic::new(
+                    RuleCode::new(Prefix::Lex, 6),
+                    "doc comment is not alone on its line",
+                    Primary::span(Span::new(file, range.start, range.end)),
+                )
+                .with_help("for an ordinary comment, write `//`"),
+            }
+        }
+    }
 
     /// Tokenizes `text`, alone in a source map, and compares the result in full.
     ///
     /// `expected_tokens` holds one line of `dump_tokens` per token, without its `\n`.
-    /// `unexpected_characters` holds each unexpected character and its byte range, in text
-    /// order.
+    /// `expected_diagnostics` holds the diagnostics in text order.
     fn assert_lexed(
         text: &str,
         expected_tokens: &[&str],
-        unexpected_characters: &[(char, Range<u32>)],
+        expected_diagnostics: &[ExpectedDiagnostic],
     ) {
         let mut source_map = SourceMap::new();
         let file = source_map.add(String::from("test.fm"), text.to_string());
@@ -437,15 +597,9 @@ mod tests {
             expected_dump.push_str(line);
             expected_dump.push('\n');
         }
-        let expected_diagnostics: Vec<Diagnostic> = unexpected_characters
+        let expected_diagnostics: Vec<Diagnostic> = expected_diagnostics
             .iter()
-            .map(|(c, range)| {
-                Diagnostic::new(
-                    UNEXPECTED_CHARACTER,
-                    format!("unexpected character `{c}`"),
-                    Primary::span(Span::new(file, range.start, range.end)),
-                )
-            })
+            .map(|expected| expected.to_diagnostic(file))
             .collect();
 
         assert_eq!(
@@ -604,7 +758,7 @@ mod tests {
 
     #[test]
     fn unexpected_character_is_reported_and_skipped() {
-        assert_lexed("@", &[r#"1:2 Eof """#], &[('@', 0..1)]);
+        assert_lexed("@", &[r#"1:2 Eof """#], &[UnexpectedCharacter('@', 0..1)]);
     }
 
     #[test]
@@ -612,13 +766,20 @@ mod tests {
         assert_lexed(
             "+é-",
             &[r#"1:1 Plus "+""#, r#"1:3 Minus "-""#, r#"1:4 Eof """#],
-            &[('é', 1..3)],
+            &[UnexpectedCharacter('é', 1..3)],
         );
     }
 
     #[test]
     fn every_unexpected_character_is_reported_in_text_order() {
-        assert_lexed("@ $", &[r#"1:4 Eof """#], &[('@', 0..1), ('$', 2..3)]);
+        assert_lexed(
+            "@ $",
+            &[r#"1:4 Eof """#],
+            &[
+                UnexpectedCharacter('@', 0..1),
+                UnexpectedCharacter('$', 2..3),
+            ],
+        );
     }
 
     #[test]
@@ -626,7 +787,7 @@ mod tests {
         assert_lexed(
             "+\r-",
             &[r#"1:1 Plus "+""#, r#"1:3 Minus "-""#, r#"1:4 Eof """#],
-            &[('\r', 1..2)],
+            &[UnexpectedCharacter('\r', 1..2)],
         );
     }
 
@@ -636,7 +797,321 @@ mod tests {
         assert_lexed(
             "+\u{A0}-",
             &[r#"1:1 Plus "+""#, r#"1:3 Minus "-""#, r#"1:4 Eof """#],
-            &[('\u{A0}', 1..3)],
+            &[UnexpectedCharacter('\u{A0}', 1..3)],
+        );
+    }
+
+    #[test]
+    fn consecutive_line_endings_merge_into_the_first() {
+        assert_lexed(
+            "+\n\n\n-",
+            &[
+                r#"1:1 Plus "+""#,
+                r#"1:2 Newline "\n""#,
+                r#"4:1 Minus "-""#,
+                r#"4:2 Eof """#,
+            ],
+            &[],
+        );
+    }
+
+    #[test]
+    fn comment_gives_no_token() {
+        let cases: [(&str, &[&str]); 2] = [
+            (
+                "+\n  // note\n-",
+                &[
+                    r#"1:1 Plus "+""#,
+                    r#"1:2 Newline "\n""#,
+                    r#"3:1 Minus "-""#,
+                    r#"3:2 Eof """#,
+                ],
+            ),
+            ("+ // note", &[r#"1:1 Plus "+""#, r#"1:10 Eof """#]),
+        ];
+
+        for (text, expected_tokens) in cases {
+            assert_lexed(text, expected_tokens, &[]);
+        }
+    }
+
+    #[test]
+    fn line_ending_after_a_comment_keeps_its_token() {
+        assert_lexed(
+            "+ // note\r\n-",
+            &[
+                r#"1:1 Plus "+""#,
+                r#"1:10 Newline "\r\n""#,
+                r#"2:1 Minus "-""#,
+                r#"2:2 Eof """#,
+            ],
+            &[],
+        );
+    }
+
+    #[test]
+    fn lone_carriage_return_does_not_end_a_comment() {
+        // TODO(J02): expect LEX-2 on the `\r`.
+        let cases: [(&str, &[&str]); 2] = [
+            (
+                "+ // a\r-\n+",
+                &[
+                    r#"1:1 Plus "+""#,
+                    r#"1:9 Newline "\n""#,
+                    r#"2:1 Plus "+""#,
+                    r#"2:2 Eof """#,
+                ],
+            ),
+            (
+                "/// a\r-\n+",
+                &[
+                    r#"1:1 DocComment("a\r-") "/// a\r-""#,
+                    r#"1:8 Newline "\n""#,
+                    r#"2:1 Plus "+""#,
+                    r#"2:2 Eof """#,
+                ],
+            ),
+        ];
+
+        for (text, expected_tokens) in cases {
+            assert_lexed(text, expected_tokens, &[]);
+        }
+    }
+
+    #[test]
+    fn line_endings_inside_parentheses_or_brackets_give_no_token() {
+        let cases: [(&str, &[&str]); 3] = [
+            (
+                "(+\n-)",
+                &[
+                    r#"1:1 OpenParen "(""#,
+                    r#"1:2 Plus "+""#,
+                    r#"2:1 Minus "-""#,
+                    r#"2:2 CloseParen ")""#,
+                    r#"2:3 Eof """#,
+                ],
+            ),
+            (
+                "[+\n-]",
+                &[
+                    r#"1:1 OpenBracket "[""#,
+                    r#"1:2 Plus "+""#,
+                    r#"2:1 Minus "-""#,
+                    r#"2:2 CloseBracket "]""#,
+                    r#"2:3 Eof """#,
+                ],
+            ),
+            (
+                "(()\n)",
+                &[
+                    r#"1:1 OpenParen "(""#,
+                    r#"1:2 OpenParen "(""#,
+                    r#"1:3 CloseParen ")""#,
+                    r#"2:1 CloseParen ")""#,
+                    r#"2:2 Eof """#,
+                ],
+            ),
+        ];
+
+        for (text, expected_tokens) in cases {
+            assert_lexed(text, expected_tokens, &[]);
+        }
+    }
+
+    #[test]
+    fn line_ending_inside_braces_gives_a_token() {
+        assert_lexed(
+            "{+\n-}",
+            &[
+                r#"1:1 OpenBrace "{""#,
+                r#"1:2 Plus "+""#,
+                r#"1:3 Newline "\n""#,
+                r#"2:1 Minus "-""#,
+                r#"2:2 CloseBrace "}""#,
+                r#"2:3 Eof """#,
+            ],
+            &[],
+        );
+    }
+
+    #[test]
+    fn innermost_open_delimiter_decides() {
+        let cases: [(&str, &[&str]); 2] = [
+            (
+                "({\n})",
+                &[
+                    r#"1:1 OpenParen "(""#,
+                    r#"1:2 OpenBrace "{""#,
+                    r#"1:3 Newline "\n""#,
+                    r#"2:1 CloseBrace "}""#,
+                    r#"2:2 CloseParen ")""#,
+                    r#"2:3 Eof """#,
+                ],
+            ),
+            (
+                "{(\n)}",
+                &[
+                    r#"1:1 OpenBrace "{""#,
+                    r#"1:2 OpenParen "(""#,
+                    r#"2:1 CloseParen ")""#,
+                    r#"2:2 CloseBrace "}""#,
+                    r#"2:3 Eof """#,
+                ],
+            ),
+        ];
+
+        for (text, expected_tokens) in cases {
+            assert_lexed(text, expected_tokens, &[]);
+        }
+    }
+
+    #[test]
+    fn line_ending_at_the_start_gives_a_token() {
+        assert_lexed(
+            "\n+",
+            &[r#"1:1 Newline "\n""#, r#"2:1 Plus "+""#, r#"2:2 Eof """#],
+            &[],
+        );
+    }
+
+    #[test]
+    fn closing_delimiter_without_its_opening_is_ignored() {
+        let cases: [(&str, &[&str]); 3] = [
+            (
+                ")\n+",
+                &[
+                    r#"1:1 CloseParen ")""#,
+                    r#"1:2 Newline "\n""#,
+                    r#"2:1 Plus "+""#,
+                    r#"2:2 Eof """#,
+                ],
+            ),
+            (
+                "(]\n+",
+                &[
+                    r#"1:1 OpenParen "(""#,
+                    r#"1:2 CloseBracket "]""#,
+                    r#"2:1 Plus "+""#,
+                    r#"2:2 Eof """#,
+                ],
+            ),
+            (
+                "[())\n]",
+                &[
+                    r#"1:1 OpenBracket "[""#,
+                    r#"1:2 OpenParen "(""#,
+                    r#"1:3 CloseParen ")""#,
+                    r#"1:4 CloseParen ")""#,
+                    r#"2:1 CloseBracket "]""#,
+                    r#"2:2 Eof """#,
+                ],
+            ),
+        ];
+
+        for (text, expected_tokens) in cases {
+            assert_lexed(text, expected_tokens, &[]);
+        }
+    }
+
+    #[test]
+    fn closing_delimiter_also_closes_the_delimiters_inside() {
+        assert_lexed(
+            "([)\n+",
+            &[
+                r#"1:1 OpenParen "(""#,
+                r#"1:2 OpenBracket "[""#,
+                r#"1:3 CloseParen ")""#,
+                r#"1:4 Newline "\n""#,
+                r#"2:1 Plus "+""#,
+                r#"2:2 Eof """#,
+            ],
+            &[],
+        );
+    }
+
+    #[test]
+    fn doc_comment_gives_a_token_with_its_text() {
+        let cases: [(&str, &[&str]); 4] = [
+            (
+                "/// Sums.\n+",
+                &[
+                    r#"1:1 DocComment("Sums.") "/// Sums.""#,
+                    r#"1:10 Newline "\n""#,
+                    r#"2:1 Plus "+""#,
+                    r#"2:2 Eof """#,
+                ],
+            ),
+            (
+                "///Sums.",
+                &[r#"1:1 DocComment("Sums.") "///Sums.""#, r#"1:9 Eof """#],
+            ),
+            (
+                "///  Sums.",
+                &[r#"1:1 DocComment(" Sums.") "///  Sums.""#, r#"1:11 Eof """#],
+            ),
+            (
+                "/// Sums.\r\n+",
+                &[
+                    r#"1:1 DocComment("Sums.") "/// Sums.""#,
+                    r#"1:10 Newline "\r\n""#,
+                    r#"2:1 Plus "+""#,
+                    r#"2:2 Eof """#,
+                ],
+            ),
+        ];
+
+        for (text, expected_tokens) in cases {
+            assert_lexed(text, expected_tokens, &[]);
+        }
+    }
+
+    #[test]
+    fn doc_comment_alone_on_its_line_gives_a_token() {
+        let cases: [(&str, &[&str]); 2] = [
+            (
+                "\t  /// Sums.",
+                &[r#"1:4 DocComment("Sums.") "/// Sums.""#, r#"1:13 Eof """#],
+            ),
+            (
+                "+\n/// Sums.",
+                &[
+                    r#"1:1 Plus "+""#,
+                    r#"1:2 Newline "\n""#,
+                    r#"2:1 DocComment("Sums.") "/// Sums.""#,
+                    r#"2:10 Eof """#,
+                ],
+            ),
+        ];
+
+        for (text, expected_tokens) in cases {
+            assert_lexed(text, expected_tokens, &[]);
+        }
+    }
+
+    #[test]
+    fn four_slashes_open_an_ordinary_comment() {
+        assert_lexed(
+            "//// Sums.\n+",
+            &[r#"1:11 Newline "\n""#, r#"2:1 Plus "+""#, r#"2:2 Eof """#],
+            &[],
+        );
+    }
+
+    #[test]
+    fn doc_comment_not_alone_on_its_line_is_reported_and_skipped() {
+        assert_lexed(
+            "+ /// Sums.",
+            &[r#"1:1 Plus "+""#, r#"1:12 Eof """#],
+            &[DocCommentNotAlone(2..11)],
+        );
+        // Only spaces and tabs may come before it, not every Unicode space.
+        assert_lexed(
+            "\u{A0}/// Sums.",
+            &[r#"1:11 Eof """#],
+            &[
+                UnexpectedCharacter('\u{A0}', 0..2),
+                DocCommentNotAlone(2..11),
+            ],
         );
     }
 }
