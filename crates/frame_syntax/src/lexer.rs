@@ -8,6 +8,13 @@ use frame_source::{FileId, SourceFile, SourceMap, Span};
 
 const UNEXPECTED_CHARACTER: RuleCode = RuleCode::new(Prefix::Lex, 24);
 const DOC_COMMENT_NOT_ALONE_ON_ITS_LINE: RuleCode = RuleCode::new(Prefix::Lex, 6);
+const RESERVED_WORD: RuleCode = RuleCode::new(Prefix::Lex, 11);
+
+// Kept for future versions. None has a use yet, so each one is a name, and the lexer can
+// refuse it without knowing what the word declares.
+const RESERVED_WORDS: [&str; 8] = [
+    "realize", "flow", "under", "unsafe", "extern", "comptime", "yield", "export",
+];
 
 fn unexpected_character(c: char, span: Span) -> Diagnostic {
     Diagnostic::new(
@@ -24,6 +31,15 @@ fn doc_comment_not_alone_on_its_line(span: Span) -> Diagnostic {
         Primary::span(span),
     )
     .with_help("for an ordinary comment, write `//`")
+}
+
+fn reserved_word(word: &str, span: Span) -> Diagnostic {
+    Diagnostic::new(
+        RESERVED_WORD,
+        format!("`{word}` is reserved"),
+        Primary::span(span),
+    )
+    .with_help("this word is reserved for a future version of Frame; choose another name")
 }
 
 /// A token: its kind, and the span of text it covers.
@@ -148,6 +164,12 @@ pub enum TokenKind {
     ///
     /// It holds the comment's text, after `///` and one optional space.
     DocComment(String),
+    /// A keyword, such as `let`.
+    Keyword(Keyword),
+    /// An identifier, such as `total`. Its name is the token's text.
+    Identifier,
+    /// `_` alone, the wildcard of patterns. `_x` is an identifier.
+    Underscore,
     /// A line ending: `\n` or `\r\n`.
     Newline,
     /// The end of the text. Its span is empty.
@@ -160,6 +182,217 @@ enum Open {
     Paren,
     Bracket,
     Brace,
+}
+
+/// A keyword.
+///
+/// Case counts: `self` and `Self` are two keywords, and `Fn` is an identifier.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Keyword {
+    /// `fn`
+    Fn,
+    /// `type`
+    Type,
+    /// `enum`
+    Enum,
+    /// `alias`
+    Alias,
+    /// `interface`
+    Interface,
+    /// `impl`
+    Impl,
+    /// `effect`
+    Effect,
+    /// `const`
+    Const,
+    /// `test`
+    Test,
+    /// `import`
+    Import,
+    /// `pub`
+    Pub,
+    /// `let`
+    Let,
+    /// `var`
+    Var,
+    /// `mut`
+    Mut,
+    /// `if`
+    If,
+    /// `else`
+    Else,
+    /// `match`
+    Match,
+    /// `when`
+    When,
+    /// `for`
+    For,
+    /// `in`
+    In,
+    /// `while`
+    While,
+    /// `loop`
+    Loop,
+    /// `break`
+    Break,
+    /// `continue`
+    Continue,
+    /// `return`
+    Return,
+    /// `fails`
+    Fails,
+    /// `fail`
+    Fail,
+    /// `try`
+    Try,
+    /// `attempt`
+    Attempt,
+    /// `requires`
+    Requires,
+    /// `assert`
+    Assert,
+    /// `uses`
+    Uses,
+    /// `provide`
+    Provide,
+    /// `with`
+    With,
+    /// `where`
+    Where,
+    /// `any`
+    Any,
+    // A variant cannot be named `Self`, a Rust keyword: the two take rustc's names.
+    /// `Self`
+    SelfUpper,
+    /// `self`
+    SelfLower,
+    /// `and`
+    And,
+    /// `or`
+    Or,
+    /// `not`
+    Not,
+    /// `is`
+    Is,
+    /// `as`
+    As,
+    /// `true`
+    True,
+    /// `false`
+    False,
+    /// `none`
+    None,
+    /// `it`
+    It,
+}
+
+impl Keyword {
+    /// Returns the keyword written `text`, if there is one.
+    fn from_text(text: &str) -> Option<Self> {
+        match text {
+            "fn" => Some(Keyword::Fn),
+            "type" => Some(Keyword::Type),
+            "enum" => Some(Keyword::Enum),
+            "alias" => Some(Keyword::Alias),
+            "interface" => Some(Keyword::Interface),
+            "impl" => Some(Keyword::Impl),
+            "effect" => Some(Keyword::Effect),
+            "const" => Some(Keyword::Const),
+            "test" => Some(Keyword::Test),
+            "import" => Some(Keyword::Import),
+            "pub" => Some(Keyword::Pub),
+            "let" => Some(Keyword::Let),
+            "var" => Some(Keyword::Var),
+            "mut" => Some(Keyword::Mut),
+            "if" => Some(Keyword::If),
+            "else" => Some(Keyword::Else),
+            "match" => Some(Keyword::Match),
+            "when" => Some(Keyword::When),
+            "for" => Some(Keyword::For),
+            "in" => Some(Keyword::In),
+            "while" => Some(Keyword::While),
+            "loop" => Some(Keyword::Loop),
+            "break" => Some(Keyword::Break),
+            "continue" => Some(Keyword::Continue),
+            "return" => Some(Keyword::Return),
+            "fails" => Some(Keyword::Fails),
+            "fail" => Some(Keyword::Fail),
+            "try" => Some(Keyword::Try),
+            "attempt" => Some(Keyword::Attempt),
+            "requires" => Some(Keyword::Requires),
+            "assert" => Some(Keyword::Assert),
+            "uses" => Some(Keyword::Uses),
+            "provide" => Some(Keyword::Provide),
+            "with" => Some(Keyword::With),
+            "where" => Some(Keyword::Where),
+            "any" => Some(Keyword::Any),
+            "Self" => Some(Keyword::SelfUpper),
+            "self" => Some(Keyword::SelfLower),
+            "and" => Some(Keyword::And),
+            "or" => Some(Keyword::Or),
+            "not" => Some(Keyword::Not),
+            "is" => Some(Keyword::Is),
+            "as" => Some(Keyword::As),
+            "true" => Some(Keyword::True),
+            "false" => Some(Keyword::False),
+            "none" => Some(Keyword::None),
+            "it" => Some(Keyword::It),
+            _ => None,
+        }
+    }
+
+    /// Returns the keyword's text, such as `"let"`.
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Keyword::Fn => "fn",
+            Keyword::Type => "type",
+            Keyword::Enum => "enum",
+            Keyword::Alias => "alias",
+            Keyword::Interface => "interface",
+            Keyword::Impl => "impl",
+            Keyword::Effect => "effect",
+            Keyword::Const => "const",
+            Keyword::Test => "test",
+            Keyword::Import => "import",
+            Keyword::Pub => "pub",
+            Keyword::Let => "let",
+            Keyword::Var => "var",
+            Keyword::Mut => "mut",
+            Keyword::If => "if",
+            Keyword::Else => "else",
+            Keyword::Match => "match",
+            Keyword::When => "when",
+            Keyword::For => "for",
+            Keyword::In => "in",
+            Keyword::While => "while",
+            Keyword::Loop => "loop",
+            Keyword::Break => "break",
+            Keyword::Continue => "continue",
+            Keyword::Return => "return",
+            Keyword::Fails => "fails",
+            Keyword::Fail => "fail",
+            Keyword::Try => "try",
+            Keyword::Attempt => "attempt",
+            Keyword::Requires => "requires",
+            Keyword::Assert => "assert",
+            Keyword::Uses => "uses",
+            Keyword::Provide => "provide",
+            Keyword::With => "with",
+            Keyword::Where => "where",
+            Keyword::Any => "any",
+            Keyword::SelfUpper => "Self",
+            Keyword::SelfLower => "self",
+            Keyword::And => "and",
+            Keyword::Or => "or",
+            Keyword::Not => "not",
+            Keyword::Is => "is",
+            Keyword::As => "as",
+            Keyword::True => "true",
+            Keyword::False => "false",
+            Keyword::None => "none",
+            Keyword::It => "it",
+        }
+    }
 }
 
 // Longest first: `find` stops at the first match, which must be the longest (LEX-7).
@@ -242,6 +475,13 @@ impl<'a> Cursor<'a> {
     fn position(&self) -> usize {
         self.text_len - self.chars.as_str().len()
     }
+
+    /// Moves past the characters for which `predicate` holds.
+    fn eat_while(&mut self, predicate: impl Fn(char) -> bool) {
+        while self.first().is_some_and(&predicate) {
+            self.advance();
+        }
+    }
 }
 
 struct Lexer<'a> {
@@ -297,6 +537,11 @@ impl<'a> Lexer<'a> {
                         self.tokens.push(token);
                     }
                 }
+                // ASCII only: `is_alphabetic` would also take `é` (LEX-8).
+                c if c.is_ascii_alphabetic() || c == '_' => {
+                    let token = self.read_word();
+                    self.tokens.push(token);
+                }
                 _ => {
                     if let Some(token) = self.read_operator() {
                         self.track_delimiter(token.kind());
@@ -323,6 +568,31 @@ impl<'a> Lexer<'a> {
             tokens: self.tokens,
             diagnostics: self.diagnostics,
         }
+    }
+
+    /// Reads a word of ASCII letters, digits and `_`, then tells what it is: `_` alone, a
+    /// keyword or an identifier. A reserved word is reported, then read as an identifier.
+    fn read_word(&mut self) -> Token {
+        let start = self.cursor.position();
+
+        // The whole word first: deciding earlier would cut `letter` into `let` and `ter`.
+        self.cursor
+            .eat_while(|c| c.is_ascii_alphanumeric() || c == '_');
+
+        let span = self.span_from(start);
+        let text = &self.text[start..self.cursor.position()];
+
+        let kind = match text {
+            "_" => TokenKind::Underscore,
+            // Read as an identifier, so that the parser does not report it a second time.
+            _ if RESERVED_WORDS.contains(&text) => {
+                self.diagnostics.push(reserved_word(text, span));
+                TokenKind::Identifier
+            }
+            _ => Keyword::from_text(text).map_or(TokenKind::Identifier, TokenKind::Keyword),
+        };
+
+        Token::new(kind, span)
     }
 
     /// Reads a line ending, `\n` or `\r\n`, if one starts here.
@@ -496,6 +766,9 @@ impl Lexed {
 /// - A comment runs from `//` to the end of the line, and gives no token.
 /// - A doc comment, `///`, gives a token if it is alone on its line, and a diagnostic
 ///   otherwise.
+/// - A word of ASCII letters, digits and `_`, not starting with a digit, is read whole: `let`
+///   is a keyword, and `letter` an identifier. `_` alone is the wildcard. A reserved word,
+///   such as `yield`, gets a diagnostic, then gives an identifier.
 /// - Operators and punctuation are read as the longest token that matches: `<<=` is one
 ///   token, not `<<` then `=`.
 /// - Any other character gets a diagnostic, and reading goes on after it.
@@ -546,12 +819,12 @@ fn usize_to_u32(value: usize) -> u32 {
 
 #[cfg(test)]
 mod tests {
-    use super::{dump_tokens, tokenize};
+    use super::{Keyword, dump_tokens, tokenize};
     use frame_diagnostics::{Diagnostic, Prefix, Primary, RuleCode};
     use frame_source::{FileId, SourceMap, Span};
     use std::ops::Range;
 
-    use ExpectedDiagnostic::{DocCommentNotAlone, UnexpectedCharacter};
+    use ExpectedDiagnostic::{DocCommentNotAlone, ReservedWord, UnexpectedCharacter};
 
     /// A diagnostic the lexer should report, with its byte range.
     ///
@@ -559,6 +832,7 @@ mod tests {
     enum ExpectedDiagnostic {
         UnexpectedCharacter(char, Range<u32>),
         DocCommentNotAlone(Range<u32>),
+        ReservedWord(&'static str, Range<u32>),
     }
 
     impl ExpectedDiagnostic {
@@ -575,6 +849,14 @@ mod tests {
                     Primary::span(Span::new(file, range.start, range.end)),
                 )
                 .with_help("for an ordinary comment, write `//`"),
+                ReservedWord(word, range) => Diagnostic::new(
+                    RuleCode::new(Prefix::Lex, 11),
+                    format!("`{word}` is reserved"),
+                    Primary::span(Span::new(file, range.start, range.end)),
+                )
+                .with_help(
+                    "this word is reserved for a future version of Frame; choose another name",
+                ),
             }
         }
     }
@@ -612,6 +894,15 @@ mod tests {
             expected_diagnostics,
             "diagnostics of {text:?}"
         );
+    }
+
+    /// Checks that `text` gives one token, of kind `kind`, and no diagnostic.
+    ///
+    /// `text` is ASCII, so its length gives the end's column.
+    fn assert_one_token(text: &str, kind: &str) {
+        let token = format!("1:1 {kind} {text:?}");
+        let end = format!(r#"1:{} Eof """#, text.len() + 1);
+        assert_lexed(text, &[&token, &end], &[]);
     }
 
     #[test]
@@ -675,9 +966,7 @@ mod tests {
         ];
 
         for (text, kind) in operators {
-            let token = format!("1:1 {kind} {text:?}");
-            let end = format!(r#"1:{} Eof """#, text.len() + 1);
-            assert_lexed(text, &[&token, &end], &[]);
+            assert_one_token(text, kind);
         }
     }
 
@@ -1112,6 +1401,192 @@ mod tests {
                 UnexpectedCharacter('\u{A0}', 0..2),
                 DocCommentNotAlone(2..11),
             ],
+        );
+    }
+
+    #[test]
+    fn each_keyword_is_recognized_and_gives_back_its_text() {
+        // Written from the specification's table, in its order, not from the lexer's.
+        let keywords: [(&str, Keyword); 47] = [
+            ("fn", Keyword::Fn),
+            ("type", Keyword::Type),
+            ("enum", Keyword::Enum),
+            ("alias", Keyword::Alias),
+            ("interface", Keyword::Interface),
+            ("impl", Keyword::Impl),
+            ("effect", Keyword::Effect),
+            ("const", Keyword::Const),
+            ("test", Keyword::Test),
+            ("import", Keyword::Import),
+            ("pub", Keyword::Pub),
+            ("let", Keyword::Let),
+            ("var", Keyword::Var),
+            ("mut", Keyword::Mut),
+            ("if", Keyword::If),
+            ("else", Keyword::Else),
+            ("match", Keyword::Match),
+            ("when", Keyword::When),
+            ("for", Keyword::For),
+            ("in", Keyword::In),
+            ("while", Keyword::While),
+            ("loop", Keyword::Loop),
+            ("break", Keyword::Break),
+            ("continue", Keyword::Continue),
+            ("return", Keyword::Return),
+            ("fails", Keyword::Fails),
+            ("fail", Keyword::Fail),
+            ("try", Keyword::Try),
+            ("attempt", Keyword::Attempt),
+            ("requires", Keyword::Requires),
+            ("assert", Keyword::Assert),
+            ("uses", Keyword::Uses),
+            ("provide", Keyword::Provide),
+            ("with", Keyword::With),
+            ("where", Keyword::Where),
+            ("any", Keyword::Any),
+            ("Self", Keyword::SelfUpper),
+            ("and", Keyword::And),
+            ("or", Keyword::Or),
+            ("not", Keyword::Not),
+            ("is", Keyword::Is),
+            ("as", Keyword::As),
+            ("true", Keyword::True),
+            ("false", Keyword::False),
+            ("none", Keyword::None),
+            ("self", Keyword::SelfLower),
+            ("it", Keyword::It),
+        ];
+
+        for (text, keyword) in keywords {
+            assert_one_token(text, &format!("Keyword({keyword:?})"));
+            assert_eq!(keyword.as_str(), text, "text of {keyword:?}");
+        }
+    }
+
+    #[test]
+    fn word_that_contains_a_keyword_is_an_identifier() {
+        for text in ["letter", "fnord", "xfn", "if_", "self2"] {
+            assert_one_token(text, "Identifier");
+        }
+    }
+
+    #[test]
+    fn keywords_match_case_exactly() {
+        let cases = [
+            ("Fn", "Identifier"),
+            ("SELF", "Identifier"),
+            ("True", "Identifier"),
+            ("Yield", "Identifier"),
+            ("self", "Keyword(SelfLower)"),
+            ("Self", "Keyword(SelfUpper)"),
+        ];
+
+        for (text, kind) in cases {
+            assert_one_token(text, kind);
+        }
+    }
+
+    #[test]
+    fn identifier_takes_letters_digits_and_underscores() {
+        for text in ["x", "_x", "__", "x_1", "MAX_LEN", "HttpClient"] {
+            assert_one_token(text, "Identifier");
+        }
+    }
+
+    #[test]
+    fn digit_does_not_start_an_identifier() {
+        // TODO(J02): T-015 reads `1` as a number.
+        assert_lexed(
+            "1x",
+            &[r#"1:2 Identifier "x""#, r#"1:3 Eof """#],
+            &[UnexpectedCharacter('1', 0..1)],
+        );
+    }
+
+    #[test]
+    fn lone_underscore_is_the_wildcard() {
+        assert_one_token("_", "Underscore");
+        assert_lexed(
+            "(_)",
+            &[
+                r#"1:1 OpenParen "(""#,
+                r#"1:2 Underscore "_""#,
+                r#"1:3 CloseParen ")""#,
+                r#"1:4 Eof """#,
+            ],
+            &[],
+        );
+    }
+
+    #[test]
+    fn reserved_word_is_reported_then_read_as_an_identifier() {
+        let reserved_words: [(&str, Range<u32>); 8] = [
+            ("realize", 0..7),
+            ("flow", 0..4),
+            ("under", 0..5),
+            ("unsafe", 0..6),
+            ("extern", 0..6),
+            ("comptime", 0..8),
+            ("yield", 0..5),
+            ("export", 0..6),
+        ];
+
+        for (word, range) in reserved_words {
+            let token = format!("1:1 Identifier {word:?}");
+            let end = format!(r#"1:{} Eof """#, word.len() + 1);
+            assert_lexed(word, &[&token, &end], &[ReservedWord(word, range)]);
+        }
+        assert_lexed(
+            "let yield = x",
+            &[
+                r#"1:1 Keyword(Let) "let""#,
+                r#"1:5 Identifier "yield""#,
+                r#"1:11 Eq "=""#,
+                r#"1:13 Identifier "x""#,
+                r#"1:14 Eof """#,
+            ],
+            &[ReservedWord("yield", 4..9)],
+        );
+    }
+
+    #[test]
+    fn nothing_is_an_identifier_even_after_uses() {
+        // The parser reads it as a keyword after `uses` (LEX-12).
+        assert_lexed(
+            "uses nothing",
+            &[
+                r#"1:1 Keyword(Uses) "uses""#,
+                r#"1:6 Identifier "nothing""#,
+                r#"1:13 Eof """#,
+            ],
+            &[],
+        );
+    }
+
+    #[test]
+    fn statement_is_split_into_words_and_operators() {
+        assert_lexed(
+            "let total = price * quantity",
+            &[
+                r#"1:1 Keyword(Let) "let""#,
+                r#"1:5 Identifier "total""#,
+                r#"1:11 Eq "=""#,
+                r#"1:13 Identifier "price""#,
+                r#"1:19 Star "*""#,
+                r#"1:21 Identifier "quantity""#,
+                r#"1:29 Eof """#,
+            ],
+            &[],
+        );
+    }
+
+    #[test]
+    fn non_ascii_letter_ends_an_identifier() {
+        // TODO(J02): T-020 decides how a non-ASCII letter inside a word is reported.
+        assert_lexed(
+            "café",
+            &[r#"1:1 Identifier "caf""#, r#"1:5 Eof """#],
+            &[UnexpectedCharacter('é', 3..5)],
         );
     }
 }
