@@ -28,4 +28,4 @@
 
 mod lexer;
 
-pub use lexer::{Lexed, Token, TokenKind, dump_tokens, tokenize};
+pub use lexer::{Keyword, Lexed, Token, TokenKind, dump_tokens, tokenize};
