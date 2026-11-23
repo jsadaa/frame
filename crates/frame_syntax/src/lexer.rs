@@ -880,23 +880,40 @@ fn usize_to_u32(value: usize) -> u32 {
 #[cfg(test)]
 mod tests {
     use super::{Keyword, dump_tokens, tokenize};
-    use frame_diagnostics::{Diagnostic, Prefix, Primary, RuleCode};
+    use frame_diagnostics::{Diagnostic, Fix, Prefix, Primary, RuleCode};
     use frame_source::{FileId, SourceMap, Span};
     use std::ops::Range;
 
-    use ExpectedDiagnostic::{DocCommentNotAlone, ReservedWord, UnexpectedCharacter};
+    use ExpectedDiagnostic::{
+        DocCommentNotAlone, FloatNotDecimal, InvalidDigit, LeadingZero, MisplacedUnderscore,
+        MissingDigits, NumberSuffix, ReservedWord, UnexpectedCharacter, UppercasePrefix,
+    };
 
     /// A diagnostic the lexer should report, with its byte range.
     ///
-    /// Titles and helps are written out here, apart from the lexer's code.
+    /// Titles and helps are written out here, apart from the lexer's code. A `u32` before
+    /// the range is the rule's number, when it can be LEX-13 or LEX-14.
     enum ExpectedDiagnostic {
         UnexpectedCharacter(char, Range<u32>),
         DocCommentNotAlone(Range<u32>),
         ReservedWord(&'static str, Range<u32>),
+        /// The literal written without its leading zeros, as the help suggests it.
+        LeadingZero(&'static str, Range<u32>),
+        MisplacedUnderscore(u32, Range<u32>),
+        /// The prefix as written, then as the fix writes it.
+        UppercasePrefix(&'static str, &'static str, Range<u32>),
+        /// The digit, then the base's name.
+        InvalidDigit(char, &'static str, Range<u32>),
+        MissingDigits(&'static str, Range<u32>),
+        NumberSuffix(u32, &'static str, Range<u32>),
+        FloatNotDecimal(Range<u32>),
     }
 
     impl ExpectedDiagnostic {
         fn to_diagnostic(&self, file: FileId) -> Diagnostic {
+            let span = |range: &Range<u32>| Span::new(file, range.start, range.end);
+            let lex = |number| RuleCode::new(Prefix::Lex, number);
+
             match self {
                 UnexpectedCharacter(c, range) => Diagnostic::new(
                     RuleCode::new(Prefix::Lex, 24),
@@ -916,6 +933,49 @@ mod tests {
                 )
                 .with_help(
                     "this word is reserved for a future version of Frame; choose another name",
+                ),
+                LeadingZero(digits, range) => Diagnostic::new(
+                    lex(13),
+                    "number literal with a leading zero",
+                    Primary::span(span(range)),
+                )
+                .with_help(format!(
+                    "write `{digits}`, or `0o{digits}` for an octal number"
+                )),
+                MisplacedUnderscore(rule, range) => Diagnostic::new(
+                    lex(*rule),
+                    "`_` must be between two digits",
+                    Primary::span(span(range)),
+                ),
+                UppercasePrefix(prefix, fix, range) => Diagnostic::new(
+                    lex(13),
+                    format!("uppercase prefix `{prefix}`"),
+                    Primary::span(span(range)),
+                )
+                .with_help("prefixes are lowercase")
+                .with_fix(Fix::new(span(range), *fix)),
+                InvalidDigit(digit, base, range) => Diagnostic::new(
+                    lex(13),
+                    format!("invalid digit `{digit}` in a {base} literal"),
+                    Primary::span(span(range)),
+                ),
+                MissingDigits(prefix, range) => Diagnostic::new(
+                    lex(13),
+                    format!("missing digits after `{prefix}`"),
+                    Primary::span(span(range)),
+                ),
+                NumberSuffix(rule, suffix, range) => Diagnostic::new(
+                    lex(*rule),
+                    format!("number literal with a suffix `{suffix}`"),
+                    Primary::span(span(range)),
+                )
+                .with_help(format!(
+                    "remove `{suffix}`: a literal takes the expected type"
+                )),
+                FloatNotDecimal(range) => Diagnostic::new(
+                    lex(14),
+                    "float literal not in decimal",
+                    Primary::span(span(range)),
                 ),
             }
         }
@@ -1554,12 +1614,11 @@ mod tests {
     }
 
     #[test]
-    fn digit_does_not_start_an_identifier() {
-        // TODO(J02): T-015 reads `1` as a number.
+    fn digit_starts_a_number_not_an_identifier() {
         assert_lexed(
             "1x",
-            &[r#"1:2 Identifier "x""#, r#"1:3 Eof """#],
-            &[UnexpectedCharacter('1', 0..1)],
+            &[r#"1:1 Int(Some(0)) "1x""#, r#"1:3 Eof """#],
+            &[NumberSuffix(13, "x", 1..2)],
         );
     }
 
@@ -1652,7 +1711,6 @@ mod tests {
 
     #[test]
     fn dot_belongs_to_a_number_only_before_a_digit() {
-        // TODO(J02): T-015 fails until `read_number` gives the literal's value.
         assert_lexed(
             "1..10",
             &[
@@ -1699,7 +1757,6 @@ mod tests {
 
     #[test]
     fn sign_belongs_to_a_number_only_after_a_decimal_exponent() {
-        // TODO(J02): T-015 fails until `read_number` gives the literal's value.
         assert_one_token("2.5E-3", r#"Float("2.5E-3")"#);
         assert_lexed(
             "0x1e+5",
@@ -1710,6 +1767,163 @@ mod tests {
                 r#"1:7 Eof """#,
             ],
             &[],
+        );
+    }
+
+    #[test]
+    fn number_literal_gives_its_value() {
+        assert_one_token("7", "Int(Some(7))");
+        assert_one_token("18446744073709551616", "Int(None)");
+        assert_one_token("1_000.000_1", r#"Float("1000.0001")"#);
+    }
+
+    #[test]
+    fn integer_with_a_leading_zero_is_refused() {
+        assert_lexed(
+            "007",
+            &[r#"1:1 Int(Some(0)) "007""#, r#"1:4 Eof """#],
+            &[LeadingZero("7", 0..3)],
+        );
+    }
+
+    #[test]
+    fn underscore_must_be_between_two_digits() {
+        assert_lexed(
+            "1__0",
+            &[r#"1:1 Int(Some(0)) "1__0""#, r#"1:5 Eof """#],
+            &[MisplacedUnderscore(13, 1..2)],
+        );
+        assert_lexed(
+            "1_",
+            &[r#"1:1 Int(Some(0)) "1_""#, r#"1:3 Eof """#],
+            &[MisplacedUnderscore(13, 1..2)],
+        );
+        assert_lexed(
+            "0x_1",
+            &[r#"1:1 Int(Some(0)) "0x_1""#, r#"1:5 Eof """#],
+            &[MisplacedUnderscore(13, 2..3)],
+        );
+        assert_lexed(
+            "1_e5",
+            &[r#"1:1 Float("0") "1_e5""#, r#"1:5 Eof """#],
+            &[MisplacedUnderscore(14, 1..2)],
+        );
+    }
+
+    #[test]
+    fn uppercase_prefix_is_refused_with_a_fix() {
+        assert_lexed(
+            "0X1F",
+            &[r#"1:1 Int(Some(0)) "0X1F""#, r#"1:5 Eof """#],
+            &[UppercasePrefix("0X", "0x", 0..2)],
+        );
+        assert_lexed(
+            "0B1",
+            &[r#"1:1 Int(Some(0)) "0B1""#, r#"1:4 Eof """#],
+            &[UppercasePrefix("0B", "0b", 0..2)],
+        );
+        assert_lexed(
+            "0O7",
+            &[r#"1:1 Int(Some(0)) "0O7""#, r#"1:4 Eof """#],
+            &[UppercasePrefix("0O", "0o", 0..2)],
+        );
+    }
+
+    #[test]
+    fn digit_outside_the_base_is_refused() {
+        assert_lexed(
+            "0b102",
+            &[r#"1:1 Int(Some(0)) "0b102""#, r#"1:6 Eof """#],
+            &[InvalidDigit('2', "binary", 4..5)],
+        );
+        assert_lexed(
+            "0o8",
+            &[r#"1:1 Int(Some(0)) "0o8""#, r#"1:4 Eof """#],
+            &[InvalidDigit('8', "octal", 2..3)],
+        );
+        assert_lexed(
+            "0xG",
+            &[r#"1:1 Int(Some(0)) "0xG""#, r#"1:4 Eof """#],
+            &[InvalidDigit('G', "hexadecimal", 2..3)],
+        );
+    }
+
+    #[test]
+    fn prefix_without_digits_is_refused() {
+        assert_lexed(
+            "0x",
+            &[r#"1:1 Int(Some(0)) "0x""#, r#"1:3 Eof """#],
+            &[MissingDigits("0x", 0..2)],
+        );
+    }
+
+    #[test]
+    fn number_suffix_is_refused() {
+        assert_lexed(
+            "10i64",
+            &[r#"1:1 Int(Some(0)) "10i64""#, r#"1:6 Eof """#],
+            &[NumberSuffix(13, "i64", 2..5)],
+        );
+        assert_lexed(
+            "1e",
+            &[r#"1:1 Int(Some(0)) "1e""#, r#"1:3 Eof """#],
+            &[NumberSuffix(13, "e", 1..2)],
+        );
+        assert_lexed(
+            "1.5f32",
+            &[r#"1:1 Float("0") "1.5f32""#, r#"1:7 Eof """#],
+            &[NumberSuffix(14, "f32", 3..6)],
+        );
+        assert_lexed(
+            "0x1z",
+            &[r#"1:1 Int(Some(0)) "0x1z""#, r#"1:5 Eof """#],
+            &[NumberSuffix(13, "z", 3..4)],
+        );
+    }
+
+    #[test]
+    fn float_not_in_decimal_is_refused() {
+        assert_lexed(
+            "0x1.5",
+            &[r#"1:1 Float("0") "0x1.5""#, r#"1:6 Eof """#],
+            &[FloatNotDecimal(0..5)],
+        );
+    }
+
+    #[test]
+    fn incomplete_exponent_ends_the_literal() {
+        assert_lexed(
+            "1e+x",
+            &[
+                r#"1:1 Int(Some(0)) "1e""#,
+                r#"1:3 Plus "+""#,
+                r#"1:4 Identifier "x""#,
+                r#"1:5 Eof """#,
+            ],
+            &[NumberSuffix(13, "e", 1..2)],
+        );
+    }
+
+    #[test]
+    fn number_literal_gets_one_diagnostic() {
+        assert_lexed(
+            "0X1__0",
+            &[r#"1:1 Int(Some(0)) "0X1__0""#, r#"1:7 Eof """#],
+            &[UppercasePrefix("0X", "0x", 0..2)],
+        );
+    }
+
+    #[test]
+    fn lexing_goes_on_after_a_refused_literal() {
+        assert_lexed(
+            "007 + 1",
+            &[
+                r#"1:1 Int(Some(0)) "007""#,
+                r#"1:5 Plus "+""#,
+                r#"1:7 Int(Some(1)) "1""#,
+                r#"1:8 Eof """#,
+            ],
+            &[LeadingZero("7", 0..3)],
         );
     }
 }
