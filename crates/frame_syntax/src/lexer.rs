@@ -1,5 +1,7 @@
 //! The lexer, which splits a file's text into tokens.
 
+mod number;
+
 use std::fmt::Write;
 use std::str::Chars;
 
@@ -168,6 +170,10 @@ pub enum TokenKind {
     Keyword(Keyword),
     /// An identifier, such as `total`. Its name is the token's text.
     Identifier,
+    /// todo!
+    Int(Option<u64>),
+    /// todo!
+    Float(String),
     /// `_` alone, the wildcard of patterns. `_x` is an identifier.
     Underscore,
     /// A line ending: `\n` or `\r\n`.
@@ -542,6 +548,10 @@ impl<'a> Lexer<'a> {
                     let token = self.read_word();
                     self.tokens.push(token);
                 }
+                c if c.is_ascii_digit() => {
+                    let token = self.read_number();
+                    self.tokens.push(token);
+                }
                 _ => {
                     if let Some(token) = self.read_operator() {
                         self.track_delimiter(token.kind());
@@ -593,6 +603,41 @@ impl<'a> Lexer<'a> {
         };
 
         Token::new(kind, span)
+    }
+
+    fn read_number(&mut self) -> Token {
+        let start = self.cursor.position();
+        let is_decimal = !(self.cursor.first() == Some('0')
+            && matches!(
+                self.cursor.second(),
+                Some('x' | 'o' | 'b' | 'X' | 'O' | 'B')
+            ));
+
+        loop {
+            self.cursor
+                .eat_while(|c| c.is_ascii_alphabetic() || c.is_ascii_digit() || c == '_');
+            let read = &self.text[start..self.cursor.position()];
+
+            match self.cursor.first() {
+                Some('.')
+                    if self.cursor.second().is_some_and(|c| c.is_ascii_digit())
+                        && !read.contains('.') =>
+                {
+                    self.cursor.advance();
+                }
+                Some('+' | '-')
+                    if self.cursor.second().is_some_and(|c| c.is_ascii_digit())
+                        && read.ends_with(['e', 'E'])
+                        && is_decimal =>
+                {
+                    self.cursor.advance();
+                }
+                _ => break,
+            }
+        }
+
+        let _text = &self.text[start..self.cursor.position()];
+        Token::new(TokenKind::Int(Some(0)), self.span_from(start))
     }
 
     /// Reads a line ending, `\n` or `\r\n`, if one starts here.
