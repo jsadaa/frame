@@ -170,9 +170,10 @@ pub enum TokenKind {
     Keyword(Keyword),
     /// An identifier, such as `total`. Its name is the token's text.
     Identifier,
-    /// todo!
+    /// An integer literal, such as `0xFF`. It holds the value, or `None` if the value does not
+    /// fit in a `u64`.
     Int(Option<u64>),
-    /// todo!
+    /// A float literal, such as `2.5e-3`. It holds the text without `_`, ready for `parse`.
     Float(String),
     /// `_` alone, the wildcard of patterns. `_x` is an identifier.
     Underscore,
@@ -605,14 +606,19 @@ impl<'a> Lexer<'a> {
         Token::new(kind, span)
     }
 
+    /// Reads a number literal, then checks it. A refused literal is reported, then read with a
+    /// placeholder value.
     fn read_number(&mut self) -> Token {
         let start = self.cursor.position();
+        // In `0x1e+5`, the `e` is a digit, so the `+` ends the literal.
         let is_decimal = !(self.cursor.first() == Some('0')
             && matches!(
                 self.cursor.second(),
                 Some('x' | 'o' | 'b' | 'X' | 'O' | 'B')
             ));
 
+        // The literal goes past a `.` or a sign only when a digit follows: `1..10` and
+        // `5.abs()` stop before the `.`.
         loop {
             self.cursor
                 .eat_while(|c| c.is_ascii_alphabetic() || c.is_ascii_digit() || c == '_');
@@ -636,8 +642,17 @@ impl<'a> Lexer<'a> {
             }
         }
 
-        let _text = &self.text[start..self.cursor.position()];
-        Token::new(TokenKind::Int(Some(0)), self.span_from(start))
+        let text = &self.text[start..self.cursor.position()];
+        let kind = match number::validate_number(text) {
+            Ok(kind) => kind,
+            Err(error) => {
+                self.diagnostics
+                    .push(error.to_diagnostic(text, self.file, start));
+                error.placeholder()
+            }
+        };
+
+        Token::new(kind, self.span_from(start))
     }
 
     /// Reads a line ending, `\n` or `\r\n`, if one starts here.

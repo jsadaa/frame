@@ -1,14 +1,23 @@
+//! Number literals: checking their form and reading their value.
+//!
+//! The lexer finds where a literal ends; this module tells whether its text is valid. The
+//! literal's type is not known yet, so a value too large for every type is not refused here.
+
 use std::ops::Range;
 
-use frame_diagnostics::Diagnostic;
-use frame_source::FileId;
+use frame_diagnostics::{Diagnostic, Fix, Prefix, Primary, RuleCode};
+use frame_source::{FileId, Span};
 
-use super::TokenKind;
+use super::{TokenKind, usize_to_u32};
 use Defect::{
     FloatNotDecimal, InvalidDigit, LeadingZero, MisplacedUnderscore, MissingDigits, Suffix,
     UppercasePrefix,
 };
 
+const INTEGER_LITERAL: RuleCode = RuleCode::new(Prefix::Lex, 13);
+const FLOAT_LITERAL: RuleCode = RuleCode::new(Prefix::Lex, 14);
+
+/// The base of an integer literal, given by its prefix. Without a prefix, it is decimal.
 #[derive(Debug, PartialEq, Eq, Clone, Copy)]
 enum Base {
     Binary,
@@ -37,24 +46,115 @@ impl Base {
     }
 }
 
+/// What is wrong with a refused literal.
 #[derive(Debug, PartialEq, Eq)]
 enum Defect {
+    /// A decimal integer of several digits starts with `0`, as in `007`.
     LeadingZero,
+    /// A `_` is not between two digits, as in `1__0`.
     MisplacedUnderscore,
+    /// The prefix is in uppercase, as in `0X1F`.
     UppercasePrefix,
+    /// A digit is not in the base, as in `0b102`.
     InvalidDigit(Base),
+    /// A prefix has no digits after it, as in `0x`.
     MissingDigits,
+    /// Letters follow the digits, as in `10i64`.
     Suffix,
+    /// A float is not written in decimal, as in `0x1.5`.
     FloatNotDecimal,
 }
 
+/// A refused literal: its first defect, and where it is.
 #[derive(Debug, PartialEq, Eq)]
 pub(super) struct NumberError {
     defect: Defect,
-    range: Range<usize>, // in bytes, relative to the literal
+    /// The defect's bytes, counted from the start of the literal.
+    range: Range<usize>,
+    /// Whether the literal is a float. It picks the rule, LEX-14 rather than LEX-13, and the
+    /// kind of the placeholder token.
     is_float: bool,
 }
 
+impl NumberError {
+    /// Builds the diagnostic of this defect, for the literal `text` found at byte `start`.
+    pub(super) fn to_diagnostic(&self, text: &str, file: FileId, start: usize) -> Diagnostic {
+        let code = if self.is_float {
+            FLOAT_LITERAL
+        } else {
+            INTEGER_LITERAL
+        };
+        let span = Span::new(
+            file,
+            usize_to_u32(start + self.range.start),
+            usize_to_u32(start + self.range.end),
+        );
+        let found = &text[self.range.clone()];
+
+        match self.defect {
+            LeadingZero => {
+                let digits = match text.trim_start_matches(['0', '_']) {
+                    "" => "0",
+                    digits => digits,
+                };
+                Diagnostic::new(
+                    code,
+                    "number literal with a leading zero",
+                    Primary::span(span),
+                )
+                .with_help(format!(
+                    "write `{digits}`, or `0o{digits}` for an octal number"
+                ))
+            }
+            MisplacedUnderscore => {
+                Diagnostic::new(code, "`_` must be between two digits", Primary::span(span))
+            }
+            UppercasePrefix => Diagnostic::new(
+                code,
+                format!("uppercase prefix `{found}`"),
+                Primary::span(span),
+            )
+            .with_help("prefixes are lowercase")
+            .with_fix(Fix::new(span, found.to_ascii_lowercase())),
+            InvalidDigit(base) => Diagnostic::new(
+                code,
+                format!("invalid digit `{found}` in a {} literal", base.name()),
+                Primary::span(span),
+            ),
+            MissingDigits => Diagnostic::new(
+                code,
+                format!("missing digits after `{}`", &text[..2]),
+                Primary::span(span),
+            ),
+            Suffix => Diagnostic::new(
+                code,
+                format!("number literal with a suffix `{found}`"),
+                Primary::span(span),
+            )
+            .with_help(format!(
+                "remove `{found}`: a literal takes the expected type"
+            )),
+            FloatNotDecimal => {
+                Diagnostic::new(code, "float literal not in decimal", Primary::span(span))
+            }
+        }
+    }
+
+    /// Returns the token of a refused literal. Its value does not matter, since the program
+    /// is refused.
+    pub(super) fn placeholder(&self) -> TokenKind {
+        if self.is_float {
+            TokenKind::Float(String::from("0"))
+        } else {
+            TokenKind::Int(Some(0))
+        }
+    }
+}
+
+/// Checks that `text` is an integer or a float literal, and returns its kind and value.
+///
+/// `text` is a whole literal, as the lexer read it, so it holds only ASCII. When the literal
+/// is refused, the error holds its first defect from the left.
 pub(super) fn validate_number(text: &str) -> Result<TokenKind, NumberError> {
     let bytes = text.as_bytes();
 
@@ -65,6 +165,8 @@ pub(super) fn validate_number(text: &str) -> Result<TokenKind, NumberError> {
         _ => (Base::Decimal, false, 0),
     };
 
+    // Decided before reading the digits: in `1_e5`, the reading stops at the `_`, but the
+    // exponent still makes it a float.
     let is_float = text.contains('.')
         || (base == Base::Decimal && (0..bytes.len()).any(|i| is_exponent_at(bytes, i)));
 
@@ -76,6 +178,8 @@ pub(super) fn validate_number(text: &str) -> Result<TokenKind, NumberError> {
         });
     }
 
+    // Its defect starts the literal, so it comes before any other. A float may start with
+    // zeros: `007.5` is valid.
     if base == Base::Decimal && !is_float && bytes.first() == Some(&b'0') {
         let leading_digits = bytes
             .iter()
@@ -149,6 +253,8 @@ pub(super) fn validate_number(text: &str) -> Result<TokenKind, NumberError> {
     }
 }
 
+/// Returns the value of `digits`, written in `base` without its prefix, or `None` if it does
+/// not fit in a `u64`.
 fn int_value(digits: &str, base: Base) -> Option<u64> {
     let radix = u64::from(base.radix());
     let mut value: u64 = 0;
@@ -164,6 +270,8 @@ fn int_value(digits: &str, base: Base) -> Option<u64> {
     Some(value)
 }
 
+/// Reads the digits of `base` and the well-placed `_` from `start`, and returns where they
+/// stop.
 fn scan_digits(
     bytes: &[u8],
     start: usize,
@@ -207,6 +315,8 @@ fn scan_digits(
     Ok(bytes.len())
 }
 
+/// Tells whether an exponent starts at `i`: an `e` or an `E`, then a digit, or a sign and a
+/// digit.
 fn is_exponent_at(bytes: &[u8], i: usize) -> bool {
     if !matches!(bytes.get(i), Some(b'e' | b'E')) {
         return false;
