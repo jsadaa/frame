@@ -1634,4 +1634,67 @@ mod tests {
             &[UnexpectedCharacter('é', 3..5)],
         );
     }
+
+    #[test]
+    fn dot_belongs_to_a_number_only_before_a_digit() {
+        // TODO(J02): T-015 fails until `read_number` gives the literal's value.
+        assert_lexed(
+            "1..10",
+            &[
+                r#"1:1 Int(Some(1)) "1""#,
+                r#"1:2 DotDot "..""#,
+                r#"1:4 Int(Some(10)) "10""#,
+                r#"1:6 Eof """#,
+            ],
+            &[],
+        );
+        assert_lexed(
+            "5.abs()",
+            &[
+                r#"1:1 Int(Some(5)) "5""#,
+                r#"1:2 Dot ".""#,
+                r#"1:3 Identifier "abs""#,
+                r#"1:6 OpenParen "(""#,
+                r#"1:7 CloseParen ")""#,
+                r#"1:8 Eof """#,
+            ],
+            &[],
+        );
+        assert_lexed(
+            "1.e5",
+            &[
+                r#"1:1 Int(Some(1)) "1""#,
+                r#"1:2 Dot ".""#,
+                r#"1:3 Identifier "e5""#,
+                r#"1:5 Eof """#,
+            ],
+            &[],
+        );
+        assert_lexed(
+            "1.2.3",
+            &[
+                r#"1:1 Float("1.2") "1.2""#,
+                r#"1:4 Dot ".""#,
+                r#"1:5 Int(Some(3)) "3""#,
+                r#"1:6 Eof """#,
+            ],
+            &[],
+        );
+    }
+
+    #[test]
+    fn sign_belongs_to_a_number_only_after_a_decimal_exponent() {
+        // TODO(J02): T-015 fails until `read_number` gives the literal's value.
+        assert_one_token("2.5E-3", r#"Float("2.5E-3")"#);
+        assert_lexed(
+            "0x1e+5",
+            &[
+                r#"1:1 Int(Some(30)) "0x1e""#,
+                r#"1:5 Plus "+""#,
+                r#"1:6 Int(Some(5)) "5""#,
+                r#"1:7 Eof """#,
+            ],
+            &[],
+        );
+    }
 }
