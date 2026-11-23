@@ -218,3 +218,138 @@ fn is_exponent_at(bytes: &[u8], i: usize) -> bool {
         _ => false,
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use std::ops::Range;
+
+    use super::{Base, Defect, NumberError, validate_number};
+    use crate::TokenKind;
+
+    use Defect::{
+        FloatNotDecimal, InvalidDigit, LeadingZero, MisplacedUnderscore, MissingDigits, Suffix,
+        UppercasePrefix,
+    };
+
+    type Validated = Result<TokenKind, NumberError>;
+
+    fn int(value: u64) -> Validated {
+        Ok(TokenKind::Int(Some(value)))
+    }
+
+    fn float(text: &str) -> Validated {
+        Ok(TokenKind::Float(text.to_string()))
+    }
+
+    fn refused(defect: Defect, range: Range<usize>, is_float: bool) -> Validated {
+        Err(NumberError {
+            defect,
+            range,
+            is_float,
+        })
+    }
+
+    /// Validates each text, and compares the result in full.
+    fn assert_validated(cases: &[(&str, Validated)]) {
+        for (text, expected) in cases {
+            assert_eq!(&validate_number(text), expected, "validation of {text:?}");
+        }
+    }
+
+    #[test]
+    fn integers_give_their_value() {
+        assert_validated(&[
+            ("0", int(0)),
+            ("7", int(7)),
+            ("1_000_000", int(1_000_000)),
+            ("0xFF_FF", int(0xFFFF)),
+            ("0xff", int(0xFF)),
+            ("0o17", int(0o17)),
+            ("0b1010", int(0b1010)),
+        ]);
+    }
+
+    #[test]
+    fn integer_too_large_for_u64_has_no_value() {
+        assert_validated(&[
+            ("18446744073709551615", int(u64::MAX)),
+            ("18446744073709551616", Ok(TokenKind::Int(None))),
+        ]);
+    }
+
+    #[test]
+    fn floats_keep_their_text_without_underscores() {
+        assert_validated(&[
+            ("0.5", float("0.5")),
+            ("1.0", float("1.0")),
+            ("1e9", float("1e9")),
+            ("2.5E-3", float("2.5E-3")),
+            ("1e+5", float("1e+5")),
+            ("1_000.000_1", float("1000.0001")),
+            // `dec_digits` accepts a leading zero.
+            ("007.5", float("007.5")),
+            ("0e5", float("0e5")),
+        ]);
+    }
+
+    #[test]
+    fn integer_with_a_leading_zero_is_refused() {
+        assert_validated(&[("007", refused(LeadingZero, 0..3, false))]);
+    }
+
+    #[test]
+    fn underscore_must_be_between_two_digits() {
+        assert_validated(&[
+            ("1__0", refused(MisplacedUnderscore, 1..2, false)),
+            ("1_", refused(MisplacedUnderscore, 1..2, false)),
+            ("0x_1", refused(MisplacedUnderscore, 2..3, false)),
+            ("1_e5", refused(MisplacedUnderscore, 1..2, true)),
+        ]);
+    }
+
+    #[test]
+    fn uppercase_prefix_is_refused() {
+        assert_validated(&[
+            ("0X1F", refused(UppercasePrefix, 0..2, false)),
+            ("0B1", refused(UppercasePrefix, 0..2, false)),
+            ("0O7", refused(UppercasePrefix, 0..2, false)),
+        ]);
+    }
+
+    #[test]
+    fn digit_outside_the_base_is_invalid() {
+        assert_validated(&[
+            ("0b102", refused(InvalidDigit(Base::Binary), 4..5, false)),
+            ("0o8", refused(InvalidDigit(Base::Octal), 2..3, false)),
+            ("0xG", refused(InvalidDigit(Base::Hexadecimal), 2..3, false)),
+            // The `2` is a digit, so the `_` before it is in place.
+            ("0b1_2", refused(InvalidDigit(Base::Binary), 4..5, false)),
+        ]);
+    }
+
+    #[test]
+    fn prefix_without_digits_is_refused() {
+        assert_validated(&[("0x", refused(MissingDigits, 0..2, false))]);
+    }
+
+    #[test]
+    fn letter_after_the_digits_starts_a_suffix() {
+        assert_validated(&[
+            ("10i64", refused(Suffix, 2..5, false)),
+            ("1e", refused(Suffix, 1..2, false)),
+            ("1.5f32", refused(Suffix, 3..6, true)),
+            ("0x1z", refused(Suffix, 3..4, false)),
+            ("0b1a", refused(Suffix, 3..4, false)),
+        ]);
+    }
+
+    #[test]
+    fn float_must_be_decimal() {
+        assert_validated(&[("0x1.5", refused(FloatNotDecimal, 0..5, true))]);
+    }
+
+    #[test]
+    fn only_the_first_defect_is_reported() {
+        assert_validated(&[("0X1__0", refused(UppercasePrefix, 0..2, false))]);
+    }
+}
