@@ -897,7 +897,7 @@ mod tests {
         UnexpectedCharacter(char, Range<u32>),
         DocCommentNotAlone(Range<u32>),
         ReservedWord(&'static str, Range<u32>),
-        /// The literal written without its leading zeros, as the help suggests it.
+        /// The help, which differs when a suggestion would not be a valid literal.
         LeadingZero(&'static str, Range<u32>),
         MisplacedUnderscore(u32, Range<u32>),
         /// The prefix as written, then as the fix writes it.
@@ -934,14 +934,12 @@ mod tests {
                 .with_help(
                     "this word is reserved for a future version of Frame; choose another name",
                 ),
-                LeadingZero(digits, range) => Diagnostic::new(
+                LeadingZero(help, range) => Diagnostic::new(
                     lex(13),
                     "number literal with a leading zero",
                     Primary::span(span(range)),
                 )
-                .with_help(format!(
-                    "write `{digits}`, or `0o{digits}` for an octal number"
-                )),
+                .with_help(*help),
                 MisplacedUnderscore(rule, range) => Diagnostic::new(
                     lex(*rule),
                     "`_` must be between two digits",
@@ -1782,7 +1780,21 @@ mod tests {
         assert_lexed(
             "007",
             &[r#"1:1 Int(Some(0)) "007""#, r#"1:4 Eof """#],
-            &[LeadingZero("7", 0..3)],
+            &[LeadingZero("write `7`, or `0o7` for an octal number", 0..3)],
+        );
+    }
+
+    #[test]
+    fn leading_zero_help_suggests_only_valid_literals() {
+        assert_lexed(
+            "089",
+            &[r#"1:1 Int(Some(0)) "089""#, r#"1:4 Eof """#],
+            &[LeadingZero("write `89`", 0..3)],
+        );
+        assert_lexed(
+            "007_",
+            &[r#"1:1 Int(Some(0)) "007_""#, r#"1:5 Eof """#],
+            &[LeadingZero("remove the leading zeros", 0..4)],
         );
     }
 
@@ -1923,7 +1935,7 @@ mod tests {
                 r#"1:7 Int(Some(1)) "1""#,
                 r#"1:8 Eof """#,
             ],
-            &[LeadingZero("7", 0..3)],
+            &[LeadingZero("write `7`, or `0o7` for an octal number", 0..3)],
         );
     }
 }

@@ -93,18 +93,26 @@ impl NumberError {
 
         match self.defect {
             LeadingZero => {
-                let digits = match text.trim_start_matches(['0', '_']) {
+                let decimal = match text.trim_start_matches(['0', '_']) {
                     "" => "0",
-                    digits => digits,
+                    rest => rest,
+                };
+                let octal = format!("0o{decimal}");
+                // A suggestion must itself be a valid literal: `089` has no octal form, and
+                // `007_` keeps a misplaced `_` once its zeros are gone.
+                let help = match (validate_number(decimal), validate_number(&octal)) {
+                    (Ok(_), Ok(_)) => {
+                        format!("write `{decimal}`, or `{octal}` for an octal number")
+                    }
+                    (Ok(_), Err(_)) => format!("write `{decimal}`"),
+                    (Err(_), _) => String::from("remove the leading zeros"),
                 };
                 Diagnostic::new(
                     code,
                     "number literal with a leading zero",
                     Primary::span(span),
                 )
-                .with_help(format!(
-                    "write `{digits}`, or `0o{digits}` for an octal number"
-                ))
+                .with_help(help)
             }
             MisplacedUnderscore => {
                 Diagnostic::new(code, "`_` must be between two digits", Primary::span(span))
