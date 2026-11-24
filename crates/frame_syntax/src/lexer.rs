@@ -610,7 +610,8 @@ impl<'a> Lexer<'a> {
     /// placeholder value.
     fn read_number(&mut self) -> Token {
         let start = self.cursor.position();
-        // In `0x1e+5`, the `e` is a digit, so the `+` ends the literal.
+        // Only a decimal literal has an exponent, so in `0x1e+5` and `0b1e+1` the `+` ends
+        // the literal.
         let is_decimal = number::starts_decimal(self.cursor.as_str());
 
         // The literal goes past a `.` or a sign only when a digit follows: `1..10` and
