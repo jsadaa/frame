@@ -611,11 +611,7 @@ impl<'a> Lexer<'a> {
     fn read_number(&mut self) -> Token {
         let start = self.cursor.position();
         // In `0x1e+5`, the `e` is a digit, so the `+` ends the literal.
-        let is_decimal = !(self.cursor.first() == Some('0')
-            && matches!(
-                self.cursor.second(),
-                Some('x' | 'o' | 'b' | 'X' | 'O' | 'B')
-            ));
+        let is_decimal = number::starts_decimal(self.cursor.as_str());
 
         // The literal goes past a `.` or a sign only when a digit follows: `1..10` and
         // `5.abs()` stop before the `.`.
@@ -954,7 +950,7 @@ mod tests {
                 .with_fix(Fix::new(span(range), *fix)),
                 InvalidDigit(digit, base, range) => Diagnostic::new(
                     lex(13),
-                    format!("invalid digit `{digit}` in a {base} literal"),
+                    format!("invalid digit `{digit}` in {base} literal"),
                     Primary::span(span(range)),
                 ),
                 MissingDigits(prefix, range) => Diagnostic::new(

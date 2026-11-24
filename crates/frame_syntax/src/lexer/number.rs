@@ -36,12 +36,13 @@ impl Base {
         }
     }
 
-    fn name(self) -> &'static str {
+    /// Returns the base's name with its article, as a title writes it: `an octal`.
+    fn name_with_article(self) -> &'static str {
         match self {
-            Base::Binary => "binary",
-            Base::Octal => "octal",
-            Base::Decimal => "decimal",
-            Base::Hexadecimal => "hexadecimal",
+            Base::Binary => "a binary",
+            Base::Octal => "an octal",
+            Base::Decimal => "a decimal",
+            Base::Hexadecimal => "a hexadecimal",
         }
     }
 }
@@ -126,7 +127,10 @@ impl NumberError {
             .with_fix(Fix::new(span, found.to_ascii_lowercase())),
             InvalidDigit(base) => Diagnostic::new(
                 code,
-                format!("invalid digit `{found}` in a {} literal", base.name()),
+                format!(
+                    "invalid digit `{found}` in a {} literal",
+                    base.name_with_article()
+                ),
                 Primary::span(span),
             ),
             MissingDigits => Diagnostic::new(
@@ -166,12 +170,7 @@ impl NumberError {
 pub(super) fn validate_number(text: &str) -> Result<TokenKind, NumberError> {
     let bytes = text.as_bytes();
 
-    let (base, uppercase_prefix, digits_start) = match (bytes.first(), bytes.get(1)) {
-        (Some(b'0'), Some(&c @ (b'b' | b'B'))) => (Base::Binary, c.is_ascii_uppercase(), 2),
-        (Some(b'0'), Some(&c @ (b'o' | b'O'))) => (Base::Octal, c.is_ascii_uppercase(), 2),
-        (Some(b'0'), Some(&c @ (b'x' | b'X'))) => (Base::Hexadecimal, c.is_ascii_uppercase(), 2),
-        _ => (Base::Decimal, false, 0),
-    };
+    let (base, uppercase_prefix, digits_start) = read_prefix(bytes);
 
     // Decided before reading the digits: in `1_e5`, the reading stops at the `_`, but the
     // exponent still makes it a float.
@@ -261,6 +260,12 @@ pub(super) fn validate_number(text: &str) -> Result<TokenKind, NumberError> {
     }
 }
 
+/// Tells whether the literal at the start of `text` is decimal. An uppercase prefix counts as
+/// a prefix, so that `0X1e+5` splits as its fix `0x1e+5` does.
+pub(super) fn starts_decimal(text: &str) -> bool {
+    read_prefix(text.as_bytes()).0 == Base::Decimal
+}
+
 /// Returns the value of `digits`, written in `base` without its prefix, or `None` if it does
 /// not fit in a `u64`.
 fn int_value(digits: &str, base: Base) -> Option<u64> {
@@ -271,8 +276,10 @@ fn int_value(digits: &str, base: Base) -> Option<u64> {
         if c == '_' {
             continue;
         }
-        let digit = u64::from(c.to_digit(base.radix())?);
-        value = value.checked_mul(radix)?.checked_add(digit)?;
+        let digit = c
+            .to_digit(base.radix())
+            .expect("validate_number checked the digits");
+        value = value.checked_mul(radix)?.checked_add(u64::from(digit))?;
     }
 
     Some(value)
@@ -321,6 +328,17 @@ fn scan_digits(
     }
 
     Ok(bytes.len())
+}
+
+/// Returns the base that the prefix of `bytes` gives, whether that prefix is in uppercase,
+/// and where the digits start.
+fn read_prefix(bytes: &[u8]) -> (Base, bool, usize) {
+    match (bytes.first(), bytes.get(1)) {
+        (Some(b'0'), Some(&c @ (b'b' | b'B'))) => (Base::Binary, c.is_ascii_uppercase(), 2),
+        (Some(b'0'), Some(&c @ (b'o' | b'O'))) => (Base::Octal, c.is_ascii_uppercase(), 2),
+        (Some(b'0'), Some(&c @ (b'x' | b'X'))) => (Base::Hexadecimal, c.is_ascii_uppercase(), 2),
+        _ => (Base::Decimal, false, 0),
+    }
 }
 
 /// Tells whether an exponent starts at `i`: an `e` or an `E`, then a digit, or a sign and a
