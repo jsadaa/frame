@@ -173,8 +173,9 @@ impl NumberError {
 
 /// Checks that `text` is an integer or a float literal, and returns its kind and value.
 ///
-/// `text` is a whole literal, as the lexer read it, so it holds only ASCII. When the literal
-/// is refused, the error holds its first defect from the left.
+/// `text` is a whole literal, as the lexer read it: it holds only ASCII, and a `.` or a sign
+/// in it comes before a digit. When the literal is refused, the error holds its first defect
+/// from the left.
 pub(super) fn validate_number(text: &str) -> Result<TokenKind, NumberError> {
     let bytes = text.as_bytes();
 
@@ -193,8 +194,8 @@ pub(super) fn validate_number(text: &str) -> Result<TokenKind, NumberError> {
         });
     }
 
-    // Its defect starts the literal, so it comes before any other. A float may start with
-    // zeros: `007.5` is valid.
+    // A leading zero is the leftmost defect, so it comes first. A float may start with zeros:
+    // `007.5` is valid.
     if base == Base::Decimal && !is_float && bytes.first() == Some(&b'0') {
         let leading_digits = bytes
             .iter()
@@ -302,8 +303,10 @@ fn int_value(digits: &str, base: Base) -> Option<u64> {
     Some(value)
 }
 
-/// Reads the digits of `base` and the well-placed `_` from `start`, and returns where they
-/// stop.
+/// Reads the digits of `base` from `start`, with the `_` between them, and returns where
+/// they stop.
+///
+/// A `_` that is not between two digits, or a decimal digit outside `base`, is an error.
 fn scan_digits(
     bytes: &[u8],
     start: usize,

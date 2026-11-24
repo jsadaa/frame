@@ -825,6 +825,10 @@ impl Lexed {
 /// - A word of ASCII letters, digits and `_`, not starting with a digit, is read whole: `let`
 ///   is a keyword, and `letter` an identifier. `_` alone is the wildcard. A reserved word,
 ///   such as `yield`, gets a diagnostic, then gives an identifier.
+/// - A number literal starts with a digit, and runs over the ASCII letters, digits and `_`
+///   that follow. It goes past a `.`, or past a sign after the `e` of a decimal literal,
+///   only before a digit: `1..10` gives `1`, `..` and `10`. A refused literal gets a
+///   diagnostic, then gives a token of its kind.
 /// - Operators and punctuation are read as the longest token that matches: `<<=` is one
 ///   token, not `<<` then `=`.
 /// - Any other character gets a diagnostic, and reading goes on after it.
