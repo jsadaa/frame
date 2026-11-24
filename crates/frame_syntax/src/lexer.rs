@@ -881,8 +881,9 @@ mod tests {
     use std::ops::Range;
 
     use ExpectedDiagnostic::{
-        DocCommentNotAlone, FloatNotDecimal, InvalidDigit, LeadingZero, MisplacedUnderscore,
-        MissingDigits, NumberSuffix, ReservedWord, UnexpectedCharacter, UppercasePrefix,
+        AfterExponent, DocCommentNotAlone, FloatNotDecimal, InvalidDigit, LeadingZero,
+        MisplacedUnderscore, MissingDigits, NumberSuffix, ReservedWord, UnexpectedCharacter,
+        UppercasePrefix,
     };
 
     /// A diagnostic the lexer should report, with its byte range.
@@ -902,6 +903,8 @@ mod tests {
         InvalidDigit(char, &'static str, Range<u32>),
         MissingDigits(&'static str, Range<u32>),
         NumberSuffix(u32, &'static str, Range<u32>),
+        /// What follows the exponent.
+        AfterExponent(&'static str, Range<u32>),
         FloatNotDecimal(Range<u32>),
     }
 
@@ -966,6 +969,12 @@ mod tests {
                 .with_help(format!(
                     "remove `{suffix}`: a literal takes the expected type"
                 )),
+                AfterExponent(rest, range) => Diagnostic::new(
+                    lex(14),
+                    format!("`{rest}` after the exponent"),
+                    Primary::span(span(range)),
+                )
+                .with_help(format!("remove `{rest}`: the exponent ends the literal")),
                 FloatNotDecimal(range) => Diagnostic::new(
                     lex(14),
                     "float literal not in decimal",
@@ -1886,6 +1895,15 @@ mod tests {
             "0x1z",
             &[r#"1:1 Int(Some(0)) "0x1z""#, r#"1:5 Eof """#],
             &[NumberSuffix(13, "z", 3..4)],
+        );
+    }
+
+    #[test]
+    fn point_after_the_exponent_is_refused() {
+        assert_lexed(
+            "1e5.5",
+            &[r#"1:1 Float("0") "1e5.5""#, r#"1:6 Eof """#],
+            &[AfterExponent(".5", 3..5)],
         );
     }
 

@@ -10,8 +10,8 @@ use frame_source::{FileId, Span};
 
 use super::{TokenKind, usize_to_u32};
 use Defect::{
-    FloatNotDecimal, InvalidDigit, LeadingZero, MisplacedUnderscore, MissingDigits, Suffix,
-    UppercasePrefix,
+    AfterExponent, FloatNotDecimal, InvalidDigit, LeadingZero, MisplacedUnderscore, MissingDigits,
+    Suffix, UppercasePrefix,
 };
 
 const INTEGER_LITERAL: RuleCode = RuleCode::new(Prefix::Lex, 13);
@@ -62,6 +62,8 @@ enum Defect {
     MissingDigits,
     /// Letters follow the digits, as in `10i64`.
     Suffix,
+    /// A point or a second exponent follows the exponent, as in `1e5.5`.
+    AfterExponent,
     /// A float is not written in decimal, as in `0x1.5`.
     FloatNotDecimal,
 }
@@ -146,6 +148,12 @@ impl NumberError {
             .with_help(format!(
                 "remove `{found}`: a literal takes the expected type"
             )),
+            AfterExponent => Diagnostic::new(
+                code,
+                format!("`{found}` after the exponent"),
+                Primary::span(span),
+            )
+            .with_help(format!("remove `{found}`: the exponent ends the literal")),
             FloatNotDecimal => {
                 Diagnostic::new(code, "float literal not in decimal", Primary::span(span))
             }
@@ -243,6 +251,15 @@ pub(super) fn validate_number(text: &str) -> Result<TokenKind, NumberError> {
             end += 1;
         }
         end = scan_digits(bytes, end, base, is_float)?;
+
+        // A point or a second exponent names no type, unlike the `f32` of `1e5f32`.
+        if bytes.get(end) == Some(&b'.') || is_exponent_at(bytes, end) {
+            return Err(NumberError {
+                defect: AfterExponent,
+                range: end..bytes.len(),
+                is_float,
+            });
+        }
     }
 
     if end < bytes.len() {
@@ -363,8 +380,8 @@ mod tests {
     use crate::TokenKind;
 
     use Defect::{
-        FloatNotDecimal, InvalidDigit, LeadingZero, MisplacedUnderscore, MissingDigits, Suffix,
-        UppercasePrefix,
+        AfterExponent, FloatNotDecimal, InvalidDigit, LeadingZero, MisplacedUnderscore,
+        MissingDigits, Suffix, UppercasePrefix,
     };
 
     type Validated = Result<TokenKind, NumberError>;
@@ -476,6 +493,17 @@ mod tests {
             ("1.5f32", refused(Suffix, 3..6, true)),
             ("0x1z", refused(Suffix, 3..4, false)),
             ("0b1a", refused(Suffix, 3..4, false)),
+            // After an exponent, letters still make a suffix.
+            ("1e5f32", refused(Suffix, 3..6, true)),
+        ]);
+    }
+
+    #[test]
+    fn point_or_exponent_after_the_exponent_is_refused() {
+        assert_validated(&[
+            ("1e5.5", refused(AfterExponent, 3..5, true)),
+            ("1e5e5", refused(AfterExponent, 3..5, true)),
+            ("1e+5e+5", refused(AfterExponent, 4..7, true)),
         ]);
     }
 
