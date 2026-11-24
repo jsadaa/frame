@@ -419,6 +419,8 @@ mod tests {
             ("0xff", int(0xFF)),
             ("0o17", int(0o17)),
             ("0b1010", int(0b1010)),
+            // In hexadecimal, `e` is a digit, not an exponent.
+            ("0x1e5", int(0x1e5)),
         ]);
     }
 
@@ -427,6 +429,8 @@ mod tests {
         assert_validated(&[
             ("18446744073709551615", int(u64::MAX)),
             ("18446744073709551616", Ok(TokenKind::Int(None))),
+            // Too large at the multiplication, not only at the addition.
+            ("99999999999999999999", Ok(TokenKind::Int(None))),
         ]);
     }
 
@@ -442,6 +446,7 @@ mod tests {
             // `dec_digits` accepts a leading zero.
             ("007.5", float("007.5")),
             ("0e5", float("0e5")),
+            ("1e0", float("1e0")),
         ]);
     }
 
@@ -466,6 +471,8 @@ mod tests {
             ("0X1F", refused(UppercasePrefix, 0..2, false)),
             ("0B1", refused(UppercasePrefix, 0..2, false)),
             ("0O7", refused(UppercasePrefix, 0..2, false)),
+            // The point makes it a float, so LEX-14 reports it.
+            ("0X1.5", refused(UppercasePrefix, 0..2, true)),
         ]);
     }
 
@@ -475,6 +482,8 @@ mod tests {
             ("0b102", refused(InvalidDigit(Base::Binary), 4..5, false)),
             ("0o8", refused(InvalidDigit(Base::Octal), 2..3, false)),
             ("0xG", refused(InvalidDigit(Base::Hexadecimal), 2..3, false)),
+            // Only the digit, not what follows it.
+            ("0oa7", refused(InvalidDigit(Base::Octal), 2..3, false)),
             // The `2` is a digit, so the `_` before it is in place.
             ("0b1_2", refused(InvalidDigit(Base::Binary), 4..5, false)),
         ]);
@@ -493,6 +502,10 @@ mod tests {
             ("1.5f32", refused(Suffix, 3..6, true)),
             ("0x1z", refused(Suffix, 3..4, false)),
             ("0b1a", refused(Suffix, 3..4, false)),
+            // Only a decimal literal has an exponent.
+            ("0b1e5", refused(Suffix, 3..5, false)),
+            // `0d` is not a prefix.
+            ("0d34", refused(Suffix, 1..4, false)),
             // After an exponent, letters still make a suffix.
             ("1e5f32", refused(Suffix, 3..6, true)),
         ]);

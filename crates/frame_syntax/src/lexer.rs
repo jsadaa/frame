@@ -1756,6 +1756,17 @@ mod tests {
             ],
             &[],
         );
+        // S-05: a float has digits on both sides of its point.
+        assert_lexed(
+            "5.",
+            &[r#"1:1 Int(Some(5)) "5""#, r#"1:2 Dot ".""#, r#"1:3 Eof """#],
+            &[],
+        );
+        assert_lexed(
+            ".5",
+            &[r#"1:1 Dot ".""#, r#"1:2 Int(Some(5)) "5""#, r#"1:3 Eof """#],
+            &[],
+        );
     }
 
     #[test]
@@ -1771,6 +1782,23 @@ mod tests {
             ],
             &[],
         );
+        // An uppercase prefix splits the text as its fix would.
+        assert_lexed(
+            "0X1e+5",
+            &[
+                r#"1:1 Int(Some(0)) "0X1e""#,
+                r#"1:5 Plus "+""#,
+                r#"1:6 Int(Some(5)) "5""#,
+                r#"1:7 Eof """#,
+            ],
+            &[UppercasePrefix("0X", "0x", 0..2)],
+        );
+        // The literal goes past each sign that follows an `e` and comes before a digit.
+        assert_lexed(
+            "1e+5e+5",
+            &[r#"1:1 Float("0") "1e+5e+5""#, r#"1:8 Eof """#],
+            &[AfterExponent("e+5", 4..7)],
+        );
     }
 
     #[test]
@@ -1785,6 +1813,16 @@ mod tests {
         assert_lexed(
             "007",
             &[r#"1:1 Int(Some(0)) "007""#, r#"1:4 Eof """#],
+            &[LeadingZero("write `7`, or `0o7` for an octal number", 0..3)],
+        );
+        assert_lexed(
+            "00",
+            &[r#"1:1 Int(Some(0)) "00""#, r#"1:3 Eof """#],
+            &[LeadingZero("write `0`, or `0o0` for an octal number", 0..2)],
+        );
+        assert_lexed(
+            "0_7",
+            &[r#"1:1 Int(Some(0)) "0_7""#, r#"1:4 Eof """#],
             &[LeadingZero("write `7`, or `0o7` for an octal number", 0..3)],
         );
     }
@@ -1813,6 +1851,12 @@ mod tests {
         assert_lexed(
             "1_",
             &[r#"1:1 Int(Some(0)) "1_""#, r#"1:3 Eof """#],
+            &[MisplacedUnderscore(13, 1..2)],
+        );
+        // One digit only: not a leading zero.
+        assert_lexed(
+            "0_",
+            &[r#"1:1 Int(Some(0)) "0_""#, r#"1:3 Eof """#],
             &[MisplacedUnderscore(13, 1..2)],
         );
         assert_lexed(
@@ -1950,6 +1994,45 @@ mod tests {
                 r#"1:8 Eof """#,
             ],
             &[LeadingZero("write `7`, or `0o7` for an octal number", 0..3)],
+        );
+    }
+
+    #[test]
+    fn literal_diagnostic_is_placed_in_the_text() {
+        assert_lexed(
+            "1 + 0X1F",
+            &[
+                r#"1:1 Int(Some(1)) "1""#,
+                r#"1:3 Plus "+""#,
+                r#"1:5 Int(Some(0)) "0X1F""#,
+                r#"1:9 Eof """#,
+            ],
+            &[UppercasePrefix("0X", "0x", 4..6)],
+        );
+    }
+
+    #[test]
+    fn number_literal_reads_only_ascii() {
+        // `is_numeric` and `is_alphanumeric` would take these characters (C.32).
+        assert_lexed("٣", &[r#"1:2 Eof """#], &[UnexpectedCharacter('٣', 0..2)]);
+        assert_lexed(
+            "1²",
+            &[r#"1:1 Int(Some(1)) "1""#, r#"1:3 Eof """#],
+            &[UnexpectedCharacter('²', 1..3)],
+        );
+        assert_lexed(
+            "1.٣",
+            &[r#"1:1 Int(Some(1)) "1""#, r#"1:2 Dot ".""#, r#"1:4 Eof """#],
+            &[UnexpectedCharacter('٣', 2..4)],
+        );
+        assert_lexed(
+            "1e+٣",
+            &[
+                r#"1:1 Int(Some(0)) "1e""#,
+                r#"1:3 Plus "+""#,
+                r#"1:5 Eof """#,
+            ],
+            &[NumberSuffix(13, "e", 1..2), UnexpectedCharacter('٣', 3..5)],
         );
     }
 }
