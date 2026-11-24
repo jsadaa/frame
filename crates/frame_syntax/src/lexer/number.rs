@@ -511,6 +511,8 @@ mod tests {
             ("0d34", refused(Suffix, 1..4, false)),
             // After an exponent, letters still make a suffix.
             ("1e5f32", refused(Suffix, 3..6, true)),
+            // An `e` with no digit after it is a letter, not a second exponent.
+            ("1e5e", refused(Suffix, 3..4, true)),
         ]);
     }
 

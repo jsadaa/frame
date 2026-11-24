@@ -1786,6 +1786,17 @@ mod tests {
             ],
             &[],
         );
+        // In binary, `e` is not a digit, but it does not start an exponent either.
+        assert_lexed(
+            "0b1e+1",
+            &[
+                r#"1:1 Int(Some(0)) "0b1e""#,
+                r#"1:5 Plus "+""#,
+                r#"1:6 Int(Some(1)) "1""#,
+                r#"1:7 Eof """#,
+            ],
+            &[NumberSuffix(13, "e", 3..4)],
+        );
         // An uppercase prefix splits the text as its fix would.
         assert_lexed(
             "0X1e+5",
