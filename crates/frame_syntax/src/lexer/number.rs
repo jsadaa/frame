@@ -137,7 +137,7 @@ impl NumberError {
             ),
             MissingDigits => Diagnostic::new(
                 code,
-                format!("missing digits after `{}`", &text[..2]),
+                format!("missing digits after `{found}`"),
                 Primary::span(span),
             ),
             Suffix => Diagnostic::new(
