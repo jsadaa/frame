@@ -898,7 +898,7 @@ mod tests {
         MisplacedUnderscore(u32, Range<u32>),
         /// The prefix as written, then as the fix writes it.
         UppercasePrefix(&'static str, &'static str, Range<u32>),
-        /// The digit, then the base's name.
+        /// The digit, then the base's name with its article, such as `an octal`.
         InvalidDigit(char, &'static str, Range<u32>),
         MissingDigits(&'static str, Range<u32>),
         NumberSuffix(u32, &'static str, Range<u32>),
@@ -1842,17 +1842,17 @@ mod tests {
         assert_lexed(
             "0b102",
             &[r#"1:1 Int(Some(0)) "0b102""#, r#"1:6 Eof """#],
-            &[InvalidDigit('2', "binary", 4..5)],
+            &[InvalidDigit('2', "a binary", 4..5)],
         );
         assert_lexed(
             "0o8",
             &[r#"1:1 Int(Some(0)) "0o8""#, r#"1:4 Eof """#],
-            &[InvalidDigit('8', "octal", 2..3)],
+            &[InvalidDigit('8', "an octal", 2..3)],
         );
         assert_lexed(
             "0xG",
             &[r#"1:1 Int(Some(0)) "0xG""#, r#"1:4 Eof """#],
-            &[InvalidDigit('G', "hexadecimal", 2..3)],
+            &[InvalidDigit('G', "a hexadecimal", 2..3)],
         );
     }
 

@@ -128,7 +128,7 @@ impl NumberError {
             InvalidDigit(base) => Diagnostic::new(
                 code,
                 format!(
-                    "invalid digit `{found}` in a {} literal",
+                    "invalid digit `{found}` in {} literal",
                     base.name_with_article()
                 ),
                 Primary::span(span),
