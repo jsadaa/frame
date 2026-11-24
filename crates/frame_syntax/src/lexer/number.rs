@@ -95,28 +95,12 @@ impl NumberError {
         let found = &text[self.range.clone()];
 
         match self.defect {
-            LeadingZero => {
-                let decimal = match text.trim_start_matches(['0', '_']) {
-                    "" => "0",
-                    rest => rest,
-                };
-                let octal = format!("0o{decimal}");
-                // A suggestion must itself be a valid literal: `089` has no octal form, and
-                // `007_` keeps a misplaced `_` once its zeros are gone.
-                let help = match (validate_number(decimal), validate_number(&octal)) {
-                    (Ok(_), Ok(_)) => {
-                        format!("write `{decimal}`, or `{octal}` for an octal number")
-                    }
-                    (Ok(_), Err(_)) => format!("write `{decimal}`"),
-                    (Err(_), _) => String::from("remove the leading zeros"),
-                };
-                Diagnostic::new(
-                    code,
-                    "number literal with a leading zero",
-                    Primary::span(span),
-                )
-                .with_help(help)
-            }
+            LeadingZero => Diagnostic::new(
+                code,
+                "number literal with a leading zero",
+                Primary::span(span),
+            )
+            .with_help(leading_zero_help(text)),
             MisplacedUnderscore => {
                 Diagnostic::new(code, "`_` must be between two digits", Primary::span(span))
             }
@@ -168,6 +152,26 @@ impl NumberError {
         } else {
             TokenKind::Int(Some(0))
         }
+    }
+}
+
+/// Returns the help for a literal with a leading zero, such as `007`.
+///
+/// It suggests a value only when the leading zero is the only defect. For `007_`, `7` would
+/// hide the misplaced `_`, and `7_` would be refused too.
+fn leading_zero_help(text: &str) -> String {
+    if !is_all_digits(text, Base::Decimal) {
+        return String::from("remove the leading zeros");
+    }
+
+    let value = match text.trim_start_matches(['0', '_']) {
+        "" => "0",
+        rest => rest,
+    };
+    if is_all_digits(value, Base::Octal) {
+        format!("write `{value}`, or `0o{value}` for an octal number")
+    } else {
+        format!("write `{value}`")
     }
 }
 
@@ -301,6 +305,11 @@ fn int_value(digits: &str, base: Base) -> Option<u64> {
     }
 
     Some(value)
+}
+
+/// Tells whether `text` holds only digits of `base`, with each `_` between two of them.
+fn is_all_digits(text: &str, base: Base) -> bool {
+    scan_digits(text.as_bytes(), 0, base, false).is_ok_and(|end| end == text.len())
 }
 
 /// Reads the digits of `base` from `start`, with the `_` between them, and returns where

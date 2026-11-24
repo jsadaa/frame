@@ -1855,6 +1855,18 @@ mod tests {
             &[r#"1:1 Int(Some(0)) "007_""#, r#"1:5 Eof """#],
             &[LeadingZero("remove the leading zeros", 0..4)],
         );
+        // The `__` would go with the zeros, and `7` would hide it.
+        assert_lexed(
+            "0__7",
+            &[r#"1:1 Int(Some(0)) "0__7""#, r#"1:5 Eof """#],
+            &[LeadingZero("remove the leading zeros", 0..4)],
+        );
+        // A suffix is another defect too.
+        assert_lexed(
+            "007i64",
+            &[r#"1:1 Int(Some(0)) "007i64""#, r#"1:7 Eof """#],
+            &[LeadingZero("remove the leading zeros", 0..6)],
+        );
     }
 
     #[test]
