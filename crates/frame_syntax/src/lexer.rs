@@ -205,6 +205,8 @@ pub enum TokenKind {
     /// A character literal, such as `'a'` or `'\n'`. It holds the value, or U+FFFD if the
     /// literal is refused.
     Char(char),
+    /// todo!
+    RawText(String),
     /// `_` alone, the wildcard of patterns. `_x` is an identifier.
     Underscore,
     /// A line ending: `\n` or `\r\n`.
