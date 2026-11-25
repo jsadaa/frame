@@ -1035,7 +1035,7 @@ mod tests {
         AfterExponent, DocCommentNotAlone, EmptyCharacterLiteral, FloatNotDecimal, InvalidDigit,
         LeadingZero, MalformedUnicodeEscape, MisplacedUnderscore, MissingDigits,
         MoreThanOneCharacter, NotScalarValue, NumberSuffix, ReservedWord, UnexpectedCharacter,
-        UnknownEscape, UnterminatedCharacterLiteral, UppercasePrefix,
+        UnknownEscape, UnterminatedCharacterLiteral, UnterminatedRawText, UppercasePrefix,
     };
 
     /// A diagnostic the lexer should report, with its byte range.
@@ -1067,6 +1067,7 @@ mod tests {
         MalformedUnicodeEscape(Range<u32>),
         /// The escape as written.
         NotScalarValue(&'static str, Range<u32>),
+        UnterminatedRawText(Range<u32>),
     }
 
     impl ExpectedDiagnostic {
@@ -1176,6 +1177,10 @@ mod tests {
                     format!("`{escape}` is not a Unicode scalar value"),
                     Primary::span(span(range)),
                 ),
+                UnterminatedRawText(range) => {
+                    Diagnostic::new(lex(19), "unterminated raw text", Primary::span(span(range)))
+                        .with_help(r#"a raw text fits on one line and contains no `"`"#)
+                }
             }
         }
     }
@@ -2495,6 +2500,118 @@ mod tests {
             &[
                 r#"1:1 Char('(') "'('""#,
                 r#"1:4 Newline "\n""#,
+                r#"2:1 Identifier "x""#,
+                r#"2:2 Eof """#,
+            ],
+            &[],
+        );
+    }
+
+    #[test]
+    fn raw_text_keeps_each_character_as_written() {
+        // Neither `\` nor `{` means anything here: these are 14 characters.
+        assert_one_token(r#"r"C:\Users\{nom}""#, r#"RawText("C:\\Users\\{nom}")"#);
+        assert_one_token(r#"r"\n""#, r#"RawText("\\n")"#);
+        // `\"` escapes nothing: the quote ends the text.
+        assert_one_token(r#"r"a\""#, r#"RawText("a\\")"#);
+    }
+
+    #[test]
+    fn empty_raw_text_gives_an_empty_content() {
+        assert_lexed(
+            r#"r"""#,
+            &[r#"1:1 RawText("") "r\"\"""#, r#"1:4 Eof """#],
+            &[],
+        );
+    }
+
+    #[test]
+    fn raw_text_is_not_a_comment() {
+        assert_one_token(
+            r#"r"// pas un commentaire""#,
+            r#"RawText("// pas un commentaire")"#,
+        );
+    }
+
+    #[test]
+    fn unterminated_raw_text_runs_to_the_end_of_the_line() {
+        assert_lexed(
+            r#"r"abc"#,
+            &[r#"1:1 RawText("abc") "r\"abc""#, r#"1:6 Eof """#],
+            &[UnterminatedRawText(0..5)],
+        );
+        assert_lexed(
+            r#"r""#,
+            &[r#"1:1 RawText("") "r\"""#, r#"1:3 Eof """#],
+            &[UnterminatedRawText(0..2)],
+        );
+        // The span counts bytes, and `é` takes two.
+        assert_lexed(
+            r#"r"é"#,
+            &[r#"1:1 RawText("é") "r\"é""#, r#"1:4 Eof """#],
+            &[UnterminatedRawText(0..4)],
+        );
+        // Lexing goes on at the line ending.
+        assert_lexed(
+            "r\"abc\n+",
+            &[
+                r#"1:1 RawText("abc") "r\"abc""#,
+                r#"1:6 Newline "\n""#,
+                r#"2:1 Plus "+""#,
+                r#"2:2 Eof """#,
+            ],
+            &[UnterminatedRawText(0..5)],
+        );
+        assert_lexed(
+            "r\"abc\r\n+",
+            &[
+                r#"1:1 RawText("abc") "r\"abc""#,
+                r#"1:6 Newline "\r\n""#,
+                r#"2:1 Plus "+""#,
+                r#"2:2 Eof """#,
+            ],
+            &[UnterminatedRawText(0..5)],
+        );
+    }
+
+    #[test]
+    fn r_alone_is_an_identifier() {
+        assert_lexed(
+            "r + r2",
+            &[
+                r#"1:1 Identifier "r""#,
+                r#"1:3 Plus "+""#,
+                r#"1:5 Identifier "r2""#,
+                r#"1:7 Eof """#,
+            ],
+            &[],
+        );
+    }
+
+    #[test]
+    fn raw_text_is_placed_in_the_text() {
+        assert_lexed(
+            r#"x = r"é" + 1"#,
+            &[
+                r#"1:1 Identifier "x""#,
+                r#"1:3 Eq "=""#,
+                r#"1:5 RawText("é") "r\"é\"""#,
+                r#"1:10 Plus "+""#,
+                r#"1:12 Int(Some(1)) "1""#,
+                r#"1:13 Eof """#,
+            ],
+            &[],
+        );
+    }
+
+    #[test]
+    fn raw_text_opens_no_delimiter() {
+        // Inside `(`, the line ending would give no token.
+        assert_lexed(
+            "r\"(\"\nx",
+            &[
+                r#"1:1 RawText("(") "r\"(\"""#,
+                r#"1:5 Newline "\n""#,
                 r#"2:1 Identifier "x""#,
                 r#"2:2 Eof """#,
             ],
