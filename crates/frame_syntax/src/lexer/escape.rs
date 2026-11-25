@@ -75,37 +75,40 @@ pub(super) fn read(text: &str) -> Result<(char, usize), EscapeError> {
 }
 
 fn read_unicode(text: &str) -> Result<(char, usize), EscapeError> {
-    let Some(stripped) = text.strip_prefix("\\u{") else {
+    let Some(after_brace) = text.strip_prefix("\\u{") else {
         return Err(EscapeError {
             defect: MalformedUnicode,
             len: 2,
         });
     };
 
-    let n = stripped.chars().take_while(char::is_ascii_hexdigit).count();
+    let digit_count = after_brace
+        .chars()
+        .take_while(char::is_ascii_hexdigit)
+        .count();
 
-    if !stripped[n..].starts_with('}') {
+    if !after_brace[digit_count..].starts_with('}') {
         return Err(EscapeError {
             defect: MalformedUnicode,
-            len: 3 + n,
+            len: 3 + digit_count,
         });
     }
 
-    if !(1..=6).contains(&n) {
+    if !(1..=6).contains(&digit_count) {
         return Err(EscapeError {
             defect: MalformedUnicode,
-            len: 3 + n + 1,
+            len: 3 + digit_count + 1,
         });
     }
 
-    let value = u32::from_str_radix(&stripped[..n], 16)
+    let value = u32::from_str_radix(&after_brace[..digit_count], 16)
         .expect("one to six hexadecimal digits fit in a u32");
 
     match char::from_u32(value) {
-        Some(c) => Ok((c, 3 + n + 1)),
+        Some(c) => Ok((c, 3 + digit_count + 1)),
         None => Err(EscapeError {
             defect: NotScalarValue,
-            len: 3 + n + 1,
+            len: 3 + digit_count + 1,
         }),
     }
 }

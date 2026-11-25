@@ -678,7 +678,7 @@ impl<'a> Lexer<'a> {
         // Each quote is one byte.
         let content = &self.text[start + 1..self.cursor.position() - 1];
 
-        let (c, len) = match content.chars().next() {
+        let (value, len) = match content.chars().next() {
             None => {
                 self.diagnostics.push(empty_character_literal(span));
                 return Token::new(TokenKind::Char(char::REPLACEMENT_CHARACTER), span);
@@ -703,7 +703,7 @@ impl<'a> Lexer<'a> {
             return Token::new(TokenKind::Char(char::REPLACEMENT_CHARACTER), span);
         }
 
-        Token::new(TokenKind::Char(c), span)
+        Token::new(TokenKind::Char(value), span)
     }
 
     /// Reads a raw text, up to its closing `"` on the same line. An unterminated raw text is
