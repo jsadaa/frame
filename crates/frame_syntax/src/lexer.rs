@@ -994,9 +994,10 @@ mod tests {
     use std::ops::Range;
 
     use ExpectedDiagnostic::{
-        AfterExponent, DocCommentNotAlone, FloatNotDecimal, InvalidDigit, LeadingZero,
-        MisplacedUnderscore, MissingDigits, NumberSuffix, ReservedWord, UnexpectedCharacter,
-        UppercasePrefix,
+        AfterExponent, DocCommentNotAlone, EmptyCharacterLiteral, FloatNotDecimal, InvalidDigit,
+        LeadingZero, MalformedUnicodeEscape, MisplacedUnderscore, MissingDigits,
+        MoreThanOneCharacter, NotScalarValue, NumberSuffix, ReservedWord, UnexpectedCharacter,
+        UnknownEscape, UnterminatedCharacterLiteral, UppercasePrefix,
     };
 
     /// A diagnostic the lexer should report, with its byte range.
@@ -1019,6 +1020,15 @@ mod tests {
         /// What follows the exponent.
         AfterExponent(&'static str, Range<u32>),
         FloatNotDecimal(Range<u32>),
+        UnterminatedCharacterLiteral(Range<u32>),
+        EmptyCharacterLiteral(Range<u32>),
+        /// The literal's content, which the help quotes.
+        MoreThanOneCharacter(&'static str, Range<u32>),
+        /// The escape as written.
+        UnknownEscape(&'static str, Range<u32>),
+        MalformedUnicodeEscape(Range<u32>),
+        /// The escape as written.
+        NotScalarValue(&'static str, Range<u32>),
     }
 
     impl ExpectedDiagnostic {
@@ -1091,6 +1101,41 @@ mod tests {
                 FloatNotDecimal(range) => Diagnostic::new(
                     lex(14),
                     "float literal not in decimal",
+                    Primary::span(span(range)),
+                ),
+                UnterminatedCharacterLiteral(range) => Diagnostic::new(
+                    lex(15),
+                    "unterminated character literal",
+                    Primary::span(span(range)),
+                ),
+                EmptyCharacterLiteral(range) => Diagnostic::new(
+                    lex(15),
+                    "empty character literal",
+                    Primary::span(span(range)),
+                ),
+                MoreThanOneCharacter(content, range) => Diagnostic::new(
+                    lex(15),
+                    "character literal with more than one character",
+                    Primary::span(span(range)),
+                )
+                .with_help(format!("for a text, write `\"{content}\"`")),
+                UnknownEscape(escape, range) => Diagnostic::new(
+                    lex(16),
+                    format!("unknown escape `{escape}`"),
+                    Primary::span(span(range)),
+                )
+                .with_help(
+                    r#"the escapes are `\n` `\r` `\t` `\0` `\\` `\'` `\"` `\{` `\}` `\u{…}`"#,
+                ),
+                MalformedUnicodeEscape(range) => Diagnostic::new(
+                    lex(16),
+                    "malformed Unicode escape",
+                    Primary::span(span(range)),
+                )
+                .with_help(r"write `\u{` with one to six hexadecimal digits, then `}`"),
+                NotScalarValue(escape, range) => Diagnostic::new(
+                    lex(16),
+                    format!("`{escape}` is not a Unicode scalar value"),
                     Primary::span(span(range)),
                 ),
             }
@@ -2169,6 +2214,253 @@ mod tests {
                 r#"1:5 Eof """#,
             ],
             &[NumberSuffix(13, "e", 1..2), UnexpectedCharacter('٣', 3..5)],
+        );
+    }
+
+    #[test]
+    fn character_literal_gives_its_value() {
+        assert_one_token("'a'", "Char('a')");
+        assert_one_token(r#"'"'"#, r#"Char('"')"#);
+        // A tab written as it is, not as `\t`.
+        assert_one_token("'\t'", r"Char('\t')");
+        assert_lexed("'é'", &[r#"1:1 Char('é') "'é'""#, r#"1:4 Eof """#], &[]);
+        assert_lexed("'😀'", &[r#"1:1 Char('😀') "'😀'""#, r#"1:4 Eof """#], &[]);
+    }
+
+    #[test]
+    fn escape_gives_its_character() {
+        assert_one_token(r"'\n'", r"Char('\n')");
+        assert_one_token(r"'\r'", r"Char('\r')");
+        assert_one_token(r"'\t'", r"Char('\t')");
+        assert_one_token(r"'\0'", r"Char('\0')");
+        assert_one_token(r"'\\'", r"Char('\\')");
+        assert_one_token(r"'\''", r"Char('\'')");
+        assert_one_token(r#"'\"'"#, r#"Char('"')"#);
+        assert_one_token(r"'\{'", "Char('{')");
+        assert_one_token(r"'\}'", "Char('}')");
+    }
+
+    #[test]
+    fn unicode_escape_gives_its_value() {
+        assert_one_token(r"'\u{41}'", "Char('A')");
+        assert_one_token(r"'\u{e9}'", "Char('é')");
+        assert_one_token(r"'\u{0}'", r"Char('\0')");
+        assert_one_token(r"'\u{1F600}'", "Char('😀')");
+        assert_one_token(r"'\u{10FFFF}'", r"Char('\u{10ffff}')");
+    }
+
+    #[test]
+    fn empty_character_literal_is_refused() {
+        assert_lexed(
+            "''",
+            &[r#"1:1 Char('�') "''""#, r#"1:3 Eof """#],
+            &[EmptyCharacterLiteral(0..2)],
+        );
+    }
+
+    #[test]
+    fn character_literal_with_more_than_one_value_is_refused() {
+        assert_lexed(
+            "'ab'",
+            &[r#"1:1 Char('�') "'ab'""#, r#"1:5 Eof """#],
+            &[MoreThanOneCharacter("ab", 0..4)],
+        );
+        // `é` written as `e`, then the combining accent U+0301: two scalar values.
+        assert_lexed(
+            "'e\u{301}'",
+            &[r#"1:1 Char('�') "'e\u{301}'""#, r#"1:5 Eof """#],
+            &[MoreThanOneCharacter("e\u{301}", 0..5)],
+        );
+        // An escape is one value, wherever it stands.
+        assert_lexed(
+            r"'\na'",
+            &[r#"1:1 Char('�') "'\\na'""#, r#"1:6 Eof """#],
+            &[MoreThanOneCharacter(r"\na", 0..5)],
+        );
+        assert_lexed(
+            r"'a\n'",
+            &[r#"1:1 Char('�') "'a\\n'""#, r#"1:6 Eof """#],
+            &[MoreThanOneCharacter(r"a\n", 0..5)],
+        );
+    }
+
+    #[test]
+    fn unterminated_character_literal_runs_to_the_end_of_the_line() {
+        assert_lexed(
+            "'a",
+            &[r#"1:1 Char('�') "'a""#, r#"1:3 Eof """#],
+            &[UnterminatedCharacterLiteral(0..2)],
+        );
+        assert_lexed(
+            "'",
+            &[r#"1:1 Char('�') "'""#, r#"1:2 Eof """#],
+            &[UnterminatedCharacterLiteral(0..1)],
+        );
+        assert_lexed(
+            "'a\r\n",
+            &[
+                r#"1:1 Char('�') "'a""#,
+                r#"1:3 Newline "\r\n""#,
+                r#"2:1 Eof """#,
+            ],
+            &[UnterminatedCharacterLiteral(0..2)],
+        );
+        // The `'` of the next line opens another literal.
+        assert_lexed(
+            "'a\nb'",
+            &[
+                r#"1:1 Char('�') "'a""#,
+                r#"1:3 Newline "\n""#,
+                r#"2:1 Identifier "b""#,
+                r#"2:2 Char('�') "'""#,
+                r#"2:3 Eof """#,
+            ],
+            &[
+                UnterminatedCharacterLiteral(0..2),
+                UnterminatedCharacterLiteral(4..5),
+            ],
+        );
+    }
+
+    #[test]
+    fn escaped_quote_does_not_end_the_literal() {
+        assert_lexed(
+            r"'\'",
+            &[r#"1:1 Char('�') "'\\'""#, r#"1:4 Eof """#],
+            &[UnterminatedCharacterLiteral(0..3)],
+        );
+    }
+
+    #[test]
+    fn backslash_does_not_take_the_line_ending() {
+        assert_lexed(
+            "'\\\n",
+            &[
+                r#"1:1 Char('�') "'\\""#,
+                r#"1:3 Newline "\n""#,
+                r#"2:1 Eof """#,
+            ],
+            &[UnterminatedCharacterLiteral(0..2)],
+        );
+    }
+
+    #[test]
+    fn unknown_escape_is_refused() {
+        assert_lexed(
+            r"'\q'",
+            &[r#"1:1 Char('�') "'\\q'""#, r#"1:5 Eof """#],
+            &[UnknownEscape(r"\q", 1..3)],
+        );
+    }
+
+    #[test]
+    fn malformed_unicode_escape_is_refused() {
+        // Without `{`, the span stops after `\u`.
+        assert_lexed(
+            r"'\u41'",
+            &[r#"1:1 Char('�') "'\\u41'""#, r#"1:7 Eof """#],
+            &[MalformedUnicodeEscape(1..3)],
+        );
+        // With `}` after the digits, the span covers the whole escape.
+        assert_lexed(
+            r"'\u{}'",
+            &[r#"1:1 Char('�') "'\\u{}'""#, r#"1:7 Eof """#],
+            &[MalformedUnicodeEscape(1..5)],
+        );
+        assert_lexed(
+            r"'\u{1234567}'",
+            &[r#"1:1 Char('�') "'\\u{1234567}'""#, r#"1:14 Eof """#],
+            &[MalformedUnicodeEscape(1..12)],
+        );
+        // Without `}` after the digits, the span stops after them.
+        assert_lexed(
+            r"'\u{4G}'",
+            &[r#"1:1 Char('�') "'\\u{4G}'""#, r#"1:9 Eof """#],
+            &[MalformedUnicodeEscape(1..5)],
+        );
+        assert_lexed(
+            r"'\u{41'",
+            &[r#"1:1 Char('�') "'\\u{41'""#, r#"1:8 Eof """#],
+            &[MalformedUnicodeEscape(1..6)],
+        );
+    }
+
+    #[test]
+    fn unicode_escape_outside_scalar_values_is_refused() {
+        assert_lexed(
+            r"'\u{D800}'",
+            &[r#"1:1 Char('�') "'\\u{D800}'""#, r#"1:11 Eof """#],
+            &[NotScalarValue(r"\u{D800}", 1..9)],
+        );
+        assert_lexed(
+            r"'\u{110000}'",
+            &[r#"1:1 Char('�') "'\\u{110000}'""#, r#"1:13 Eof """#],
+            &[NotScalarValue(r"\u{110000}", 1..11)],
+        );
+    }
+
+    #[test]
+    fn character_literal_gets_one_diagnostic() {
+        // The refused escape is reported, not the second value.
+        assert_lexed(
+            r"'\qa'",
+            &[r#"1:1 Char('�') "'\\qa'""#, r#"1:6 Eof """#],
+            &[UnknownEscape(r"\q", 1..3)],
+        );
+        // The second value is not read, so its escape is not checked.
+        assert_lexed(
+            r"'a\q'",
+            &[r#"1:1 Char('�') "'a\\q'""#, r#"1:6 Eof """#],
+            &[MoreThanOneCharacter(r"a\q", 0..5)],
+        );
+        // Without its closing `'`, the literal's content is not read.
+        assert_lexed(
+            r"'\q",
+            &[r#"1:1 Char('�') "'\\q""#, r#"1:4 Eof """#],
+            &[UnterminatedCharacterLiteral(0..3)],
+        );
+    }
+
+    #[test]
+    fn lexing_goes_on_after_a_refused_character_literal() {
+        assert_lexed(
+            "'ab' + 'c'",
+            &[
+                r#"1:1 Char('�') "'ab'""#,
+                r#"1:6 Plus "+""#,
+                r#"1:8 Char('c') "'c'""#,
+                r#"1:11 Eof """#,
+            ],
+            &[MoreThanOneCharacter("ab", 0..4)],
+        );
+    }
+
+    #[test]
+    fn escape_diagnostic_is_placed_in_the_text() {
+        assert_lexed(
+            r"x = '\q'",
+            &[
+                r#"1:1 Identifier "x""#,
+                r#"1:3 Eq "=""#,
+                r#"1:5 Char('�') "'\\q'""#,
+                r#"1:9 Eof """#,
+            ],
+            &[UnknownEscape(r"\q", 5..7)],
+        );
+    }
+
+    #[test]
+    fn character_literal_opens_no_delimiter() {
+        // Inside `(`, the line ending would give no token.
+        assert_lexed(
+            "'('\nx",
+            &[
+                r#"1:1 Char('(') "'('""#,
+                r#"1:4 Newline "\n""#,
+                r#"2:1 Identifier "x""#,
+                r#"2:2 Eof """#,
+            ],
+            &[],
         );
     }
 }
