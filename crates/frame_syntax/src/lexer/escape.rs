@@ -55,6 +55,8 @@ impl EscapeError {
     }
 }
 
+/// Reads the escape at the start of `text`, which starts with `\`. Returns its character
+/// and how many bytes it takes.
 pub(super) fn read(text: &str) -> Result<(char, usize), EscapeError> {
     match text.chars().nth(1) {
         Some('n') => Ok(('\n', 2)),
@@ -67,6 +69,7 @@ pub(super) fn read(text: &str) -> Result<(char, usize), EscapeError> {
             defect: Unknown,
             len: 1 + c.len_utf8(),
         }),
+        // The text may end right after `\`.
         None => Err(EscapeError {
             defect: Unknown,
             len: 1,
@@ -74,6 +77,7 @@ pub(super) fn read(text: &str) -> Result<(char, usize), EscapeError> {
     }
 }
 
+/// Reads a `\u{…}` escape at the start of `text`.
 fn read_unicode(text: &str) -> Result<(char, usize), EscapeError> {
     let Some(after_brace) = text.strip_prefix("\\u{") else {
         return Err(EscapeError {
@@ -82,6 +86,8 @@ fn read_unicode(text: &str) -> Result<(char, usize), EscapeError> {
         });
     };
 
+    // Hexadecimal digits are ASCII, so their count is also their length in bytes. `\u{` takes
+    // three.
     let digit_count = after_brace
         .chars()
         .take_while(char::is_ascii_hexdigit)
