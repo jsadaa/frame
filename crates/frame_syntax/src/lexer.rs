@@ -531,12 +531,13 @@ impl<'a> Cursor<'a> {
         }
     }
 
-    /// Returns whether the cursor is on a line ending: `\n` or `\r\n`.
+    /// Returns whether the cursor is at the end of its line: on `\n`, on `\r\n`, or at the
+    /// end of the text.
     fn at_line_end(&self) -> bool {
         match self.first() {
-            Some('\n') => true,
+            None | Some('\n') => true,
             Some('\r') => self.second() == Some('\n'),
-            _ => false,
+            Some(_) => false,
         }
     }
 }
@@ -657,7 +658,7 @@ impl<'a> Lexer<'a> {
                 }
                 '\\' => {
                     self.cursor.advance();
-                    if self.cursor.first().is_some() && !self.cursor.at_line_end() {
+                    if !self.cursor.at_line_end() {
                         self.cursor.advance();
                     }
                 }
@@ -715,7 +716,7 @@ impl<'a> Lexer<'a> {
         self.cursor.advance();
         self.cursor.advance();
 
-        while self.cursor.first().is_some_and(|c| c != '"') && !self.cursor.at_line_end() {
+        while !self.cursor.at_line_end() && self.cursor.first() != Some('"') {
             self.cursor.advance();
         }
 
@@ -870,7 +871,7 @@ impl<'a> Lexer<'a> {
 
     /// Skips the rest of the line, up to its line ending.
     fn skip_until_newline(&mut self) {
-        while self.cursor.first().is_some() && !self.cursor.at_line_end() {
+        while !self.cursor.at_line_end() {
             self.cursor.advance();
         }
     }
