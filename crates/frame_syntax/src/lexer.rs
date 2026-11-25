@@ -214,7 +214,7 @@ pub enum TokenKind {
     /// literal is refused.
     Char(char),
     /// A raw text, such as `r"C:\Users"`. It holds the characters between the quotes, as
-    /// written.
+    /// written; without the closing quote, those up to the end of the line.
     RawText(String),
     /// `_` alone, the wildcard of patterns. `_x` is an identifier.
     Underscore,
@@ -979,6 +979,12 @@ impl Lexed {
 ///   that follow. It goes past a `.`, or past a sign after the `e` of a decimal literal,
 ///   only before a digit: `1..10` gives `1`, `..` and `10`. A refused literal gets a
 ///   diagnostic, then gives a token of its kind.
+/// - A character literal runs from `'` to the next `'` of the line that no `\` escapes, or
+///   to the end of the line. It holds one character, written as it is or as an escape:
+///   `'a'`, `'\n'`, `'\u{1F600}'`. A refused literal gets a diagnostic, then gives U+FFFD.
+/// - A raw text, `r` right before `"`, runs to the next `"` of the line, and keeps each
+///   character as written. Without that `"`, it gets a diagnostic, and holds the rest of
+///   the line.
 /// - Operators and punctuation are read as the longest token that matches: `<<=` is one
 ///   token, not `<<` then `=`.
 /// - Any other character gets a diagnostic, and reading goes on after it.
