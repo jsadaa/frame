@@ -53,6 +53,11 @@ impl EscapeError {
             ),
         }
     }
+
+    /// Returns how many bytes were read, counted from the `\`.
+    pub(super) fn len(&self) -> usize {
+        self.len
+    }
 }
 
 /// Reads the escape at the start of `text`, which starts with `\`. Returns its character

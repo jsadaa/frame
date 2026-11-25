@@ -64,12 +64,14 @@ fn empty_character_literal(span: Span) -> Diagnostic {
 }
 
 fn character_literal_with_more_than_one_character(content: &str, span: Span) -> Diagnostic {
+    let text = escape_for_text(content);
+
     Diagnostic::new(
         CHARACTER_LITERAL,
         "character literal with more than one character",
         Primary::span(span),
     )
-    .with_help(format!("for a text, write `\"{content}\"`"))
+    .with_help(format!("for a text, write `\"{text}\"`"))
 }
 
 fn unterminated_raw_text(span: Span) -> Diagnostic {
@@ -1020,6 +1022,29 @@ pub fn dump_tokens(tokens: &[Token], file: &SourceFile) -> String {
     dump
 }
 
+/// Writes the content of a character literal as the content of a text. A text gives a
+/// meaning to `"`, `{` and `}`, so each one gets a `\`, unless it is part of an escape.
+fn escape_for_text(content: &str) -> String {
+    let mut text = String::with_capacity(content.len());
+    let mut rest = content;
+
+    while let Some(c) = rest.chars().next() {
+        let len = match c {
+            // Copied as written, refused or not: `{` is part of `\u{41}`.
+            '\\' => escape::read(rest).map_or_else(|error| error.len(), |(_, len)| len),
+            '"' | '{' | '}' => {
+                text.push('\\');
+                1
+            }
+            _ => c.len_utf8(),
+        };
+        text.push_str(&rest[..len]);
+        rest = &rest[len..];
+    }
+
+    text
+}
+
 fn usize_to_u32(value: usize) -> u32 {
     u32::try_from(value).expect("SourceMap::add() checked that offsets fit in u32")
 }
@@ -1060,7 +1085,7 @@ mod tests {
         FloatNotDecimal(Range<u32>),
         UnterminatedCharacterLiteral(Range<u32>),
         EmptyCharacterLiteral(Range<u32>),
-        /// The literal's content, which the help quotes.
+        /// What the help writes between the quotes of a text.
         MoreThanOneCharacter(&'static str, Range<u32>),
         /// The escape as written.
         UnknownEscape(&'static str, Range<u32>),
@@ -2489,6 +2514,43 @@ mod tests {
                 r#"1:9 Eof """#,
             ],
             &[UnknownEscape(r"\q", 5..7)],
+        );
+    }
+
+    #[test]
+    fn help_escapes_what_a_text_would_read() {
+        // In a text, `"` would end it, and `{x}` would read `x`.
+        assert_lexed(
+            r#"'a"'"#,
+            &[r#"1:1 Char('�') "'a\"'""#, r#"1:5 Eof """#],
+            &[MoreThanOneCharacter(r#"a\""#, 0..4)],
+        );
+        assert_lexed(
+            "'{x}'",
+            &[r#"1:1 Char('�') "'{x}'""#, r#"1:6 Eof """#],
+            &[MoreThanOneCharacter(r"\{x\}", 0..5)],
+        );
+        // An escape stays as written, its braces too.
+        assert_lexed(
+            r#"'\"a'"#,
+            &[r#"1:1 Char('�') "'\\\"a'""#, r#"1:6 Eof """#],
+            &[MoreThanOneCharacter(r#"\"a"#, 0..5)],
+        );
+        assert_lexed(
+            r#"'\\"'"#,
+            &[r#"1:1 Char('�') "'\\\\\"'""#, r#"1:6 Eof """#],
+            &[MoreThanOneCharacter(r#"\\\""#, 0..5)],
+        );
+        assert_lexed(
+            r"'\u{41}}'",
+            &[r#"1:1 Char('�') "'\\u{41}}'""#, r#"1:10 Eof """#],
+            &[MoreThanOneCharacter(r"\u{41}\}", 0..9)],
+        );
+        // A refused escape stays as the reader delimits it: here `\u{4`.
+        assert_lexed(
+            r"'a\u{4G}'",
+            &[r#"1:1 Char('�') "'a\\u{4G}'""#, r#"1:10 Eof """#],
+            &[MoreThanOneCharacter(r"a\u{4G\}", 0..9)],
         );
     }
 
