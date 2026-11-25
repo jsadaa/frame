@@ -57,6 +57,9 @@ impl EscapeError {
 
 /// Reads the escape at the start of `text`, which starts with `\`. Returns its character
 /// and how many bytes it takes.
+///
+/// An escape never takes a line ending. Before one, or at the end of `text`, the escape is
+/// `\` alone, which is unknown.
 pub(super) fn read(text: &str) -> Result<(char, usize), EscapeError> {
     match text.chars().nth(1) {
         Some('n') => Ok(('\n', 2)),
@@ -65,14 +68,14 @@ pub(super) fn read(text: &str) -> Result<(char, usize), EscapeError> {
         Some('0') => Ok(('\0', 2)),
         Some(c @ ('\\' | '\'' | '"' | '{' | '}')) => Ok((c, 2)),
         Some('u') => read_unicode(text),
+        // `\r` even alone: it is a forbidden character (LEX-2), which the title must not quote.
+        None | Some('\n' | '\r') => Err(EscapeError {
+            defect: Unknown,
+            len: 1,
+        }),
         Some(c) => Err(EscapeError {
             defect: Unknown,
             len: 1 + c.len_utf8(),
-        }),
-        // The text may end right after `\`.
-        None => Err(EscapeError {
-            defect: Unknown,
-            len: 1,
         }),
     }
 }
@@ -191,6 +194,9 @@ mod tests {
             (r"\é", refused(Unknown, 3)),
             // Only `\` was read.
             (r"\", refused(Unknown, 1)),
+            // An escape never takes a line ending.
+            ("\\\nx", refused(Unknown, 1)),
+            ("\\\r\nx", refused(Unknown, 1)),
         ]);
     }
 
