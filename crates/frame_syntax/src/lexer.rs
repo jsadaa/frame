@@ -13,6 +13,7 @@ const UNEXPECTED_CHARACTER: RuleCode = RuleCode::new(Prefix::Lex, 24);
 const DOC_COMMENT_NOT_ALONE_ON_ITS_LINE: RuleCode = RuleCode::new(Prefix::Lex, 6);
 const RESERVED_WORD: RuleCode = RuleCode::new(Prefix::Lex, 11);
 const CHARACTER_LITERAL: RuleCode = RuleCode::new(Prefix::Lex, 15);
+const RAW_TEXT: RuleCode = RuleCode::new(Prefix::Lex, 19);
 
 // Kept for future versions. None has a use yet, so each one is a name, and the lexer can
 // refuse it without knowing what the word declares.
@@ -69,6 +70,11 @@ fn character_literal_with_more_than_one_character(content: &str, span: Span) -> 
         Primary::span(span),
     )
     .with_help(format!("for a text, write `\"{content}\"`"))
+}
+
+fn unterminated_raw_text(span: Span) -> Diagnostic {
+    Diagnostic::new(RAW_TEXT, "unterminated raw text", Primary::span(span))
+        .with_help("a raw text fits on one line and contains no `\"`")
 }
 
 /// A token: its kind, and the span of text it covers.
@@ -205,7 +211,8 @@ pub enum TokenKind {
     /// A character literal, such as `'a'` or `'\n'`. It holds the value, or U+FFFD if the
     /// literal is refused.
     Char(char),
-    /// todo!
+    /// A raw text, such as `r"C:\Users"`. It holds the characters between the quotes, as
+    /// written.
     RawText(String),
     /// `_` alone, the wildcard of patterns. `_x` is an identifier.
     Underscore,
@@ -589,6 +596,11 @@ impl<'a> Lexer<'a> {
                     let token = self.read_char();
                     self.tokens.push(token);
                 }
+                // Before words: they would read `r` as an identifier.
+                'r' if self.cursor.second() == Some('"') => {
+                    let token = self.read_raw_text();
+                    self.tokens.push(token);
+                }
                 // ASCII only: `is_alphabetic` would also take `é` (LEX-8).
                 c if c.is_ascii_alphabetic() || c == '_' => {
                     let token = self.read_word();
@@ -692,6 +704,30 @@ impl<'a> Lexer<'a> {
         }
 
         Token::new(TokenKind::Char(c), span)
+    }
+
+    /// Reads a raw text, up to its closing `"` on the same line. An unterminated raw text is
+    /// reported, then read with what it holds up to the end of the line.
+    fn read_raw_text(&mut self) -> Token {
+        let start = self.cursor.position();
+        self.cursor.advance();
+        self.cursor.advance();
+
+        while self.cursor.first().is_some_and(|c| c != '"') && !self.cursor.at_line_end() {
+            self.cursor.advance();
+        }
+
+        // `r` and `"` are one byte each.
+        let content = self.text[start + 2..self.cursor.position()].to_string();
+
+        if self.cursor.first() == Some('"') {
+            self.cursor.advance();
+        } else {
+            self.diagnostics
+                .push(unterminated_raw_text(self.span_from(start)));
+        }
+
+        Token::new(TokenKind::RawText(content), self.span_from(start))
     }
 
     /// Reads a word of ASCII letters, digits and `_`, then tells what it is: `_` alone, a
