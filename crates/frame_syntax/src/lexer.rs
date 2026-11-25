@@ -521,6 +521,15 @@ impl<'a> Cursor<'a> {
             self.advance();
         }
     }
+
+    /// Returns whether the cursor is on a line ending: `\n` or `\r\n`.
+    fn at_line_end(&self) -> bool {
+        match self.first() {
+            Some('\n') => true,
+            Some('\r') => self.second() == Some('\n'),
+            _ => false,
+        }
+    }
 }
 
 struct Lexer<'a> {
@@ -624,8 +633,6 @@ impl<'a> Lexer<'a> {
         self.cursor.advance();
 
         let mut terminated = false;
-        let is_newline =
-            |c: char, next: Option<char>| (c == '\r' && next == Some('\n')) || (c == '\n');
 
         while let Some(c) = self.cursor.first() {
             match c {
@@ -636,15 +643,11 @@ impl<'a> Lexer<'a> {
                 }
                 '\\' => {
                     self.cursor.advance();
-                    if self
-                        .cursor
-                        .first()
-                        .is_some_and(|c| !is_newline(c, self.cursor.second()))
-                    {
+                    if self.cursor.first().is_some() && !self.cursor.at_line_end() {
                         self.cursor.advance();
                     }
                 }
-                c if is_newline(c, self.cursor.second()) => {
+                _ if self.cursor.at_line_end() => {
                     break;
                 }
                 _ => {
@@ -829,10 +832,7 @@ impl<'a> Lexer<'a> {
 
     /// Skips the rest of the line, up to its line ending.
     fn skip_until_newline(&mut self) {
-        while let Some(c) = self.cursor.first() {
-            if c == '\n' || (c == '\r' && self.cursor.second() == Some('\n')) {
-                break;
-            }
+        while self.cursor.first().is_some() && !self.cursor.at_line_end() {
             self.cursor.advance();
         }
     }
