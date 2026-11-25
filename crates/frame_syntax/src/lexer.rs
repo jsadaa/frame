@@ -1,5 +1,6 @@
 //! The lexer, which splits a file's text into tokens.
 
+mod escape;
 mod number;
 
 use std::fmt::Write;
@@ -11,6 +12,7 @@ use frame_source::{FileId, SourceFile, SourceMap, Span};
 const UNEXPECTED_CHARACTER: RuleCode = RuleCode::new(Prefix::Lex, 24);
 const DOC_COMMENT_NOT_ALONE_ON_ITS_LINE: RuleCode = RuleCode::new(Prefix::Lex, 6);
 const RESERVED_WORD: RuleCode = RuleCode::new(Prefix::Lex, 11);
+const CHARACTER_LITERAL: RuleCode = RuleCode::new(Prefix::Lex, 15);
 
 // Kept for future versions. None has a use yet, so each one is a name, and the lexer can
 // refuse it without knowing what the word declares.
@@ -42,6 +44,31 @@ fn reserved_word(word: &str, span: Span) -> Diagnostic {
         Primary::span(span),
     )
     .with_help("this word is reserved for a future version of Frame; choose another name")
+}
+
+fn unterminated_character_literal(span: Span) -> Diagnostic {
+    Diagnostic::new(
+        CHARACTER_LITERAL,
+        "unterminated character literal",
+        Primary::span(span),
+    )
+}
+
+fn empty_character_literal(span: Span) -> Diagnostic {
+    Diagnostic::new(
+        CHARACTER_LITERAL,
+        "empty character literal",
+        Primary::span(span),
+    )
+}
+
+fn character_literal_with_more_than_one_character(content: &str, span: Span) -> Diagnostic {
+    Diagnostic::new(
+        CHARACTER_LITERAL,
+        "character literal with more than one character",
+        Primary::span(span),
+    )
+    .with_help(format!("for a text, write `\"{content}\"`"))
 }
 
 /// A token: its kind, and the span of text it covers.
@@ -175,6 +202,9 @@ pub enum TokenKind {
     Int(Option<u64>),
     /// A float literal, such as `2.5e-3`. It holds the text without `_`, ready for `parse`.
     Float(String),
+    /// A character literal, such as `'a'` or `'\n'`. It holds the value, or U+FFFD if the
+    /// literal is refused.
+    Char(char),
     /// `_` alone, the wildcard of patterns. `_x` is an identifier.
     Underscore,
     /// A line ending: `\n` or `\r\n`.
@@ -544,6 +574,10 @@ impl<'a> Lexer<'a> {
                         self.tokens.push(token);
                     }
                 }
+                '\'' => {
+                    let token = self.read_char();
+                    self.tokens.push(token);
+                }
                 // ASCII only: `is_alphabetic` would also take `é` (LEX-8).
                 c if c.is_ascii_alphabetic() || c == '_' => {
                     let token = self.read_word();
@@ -579,6 +613,80 @@ impl<'a> Lexer<'a> {
             tokens: self.tokens,
             diagnostics: self.diagnostics,
         }
+    }
+
+    /// Reads a character literal, then checks it. A refused literal is reported, then read as
+    /// U+FFFD.
+    fn read_char(&mut self) -> Token {
+        let start = self.cursor.position();
+        self.cursor.advance();
+
+        let mut terminated = false;
+        let is_newline =
+            |c: char, next: Option<char>| (c == '\r' && next == Some('\n')) || (c == '\n');
+
+        while let Some(c) = self.cursor.first() {
+            match c {
+                '\'' => {
+                    self.cursor.advance();
+                    terminated = true;
+                    break;
+                }
+                '\\' => {
+                    self.cursor.advance();
+                    if self
+                        .cursor
+                        .first()
+                        .is_some_and(|c| !is_newline(c, self.cursor.second()))
+                    {
+                        self.cursor.advance();
+                    }
+                }
+                c if is_newline(c, self.cursor.second()) => {
+                    break;
+                }
+                _ => {
+                    self.cursor.advance();
+                }
+            }
+        }
+
+        let span = self.span_from(start);
+
+        if !terminated {
+            self.diagnostics.push(unterminated_character_literal(span));
+            return Token::new(TokenKind::Char(char::REPLACEMENT_CHARACTER), span);
+        }
+
+        // Each quote is one byte.
+        let content = &self.text[start + 1..self.cursor.position() - 1];
+
+        let (c, len) = match content.chars().next() {
+            None => {
+                self.diagnostics.push(empty_character_literal(span));
+                return Token::new(TokenKind::Char(char::REPLACEMENT_CHARACTER), span);
+            }
+            Some('\\') => match escape::read(content) {
+                Ok(read) => read,
+                Err(error) => {
+                    // The escape starts after the opening quote.
+                    self.diagnostics
+                        .push(error.to_diagnostic(content, self.file, start + 1));
+                    return Token::new(TokenKind::Char(char::REPLACEMENT_CHARACTER), span);
+                }
+            },
+            Some(c) => (c, c.len_utf8()),
+        };
+
+        if !content[len..].is_empty() {
+            self.diagnostics
+                .push(character_literal_with_more_than_one_character(
+                    content, span,
+                ));
+            return Token::new(TokenKind::Char(char::REPLACEMENT_CHARACTER), span);
+        }
+
+        Token::new(TokenKind::Char(c), span)
     }
 
     /// Reads a word of ASCII letters, digits and `_`, then tells what it is: `_` alone, a
