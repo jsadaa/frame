@@ -108,23 +108,23 @@ fn read_unicode(text: &str) -> Result<(char, usize), EscapeError> {
         });
     }
 
+    // `\u{`, the digits, then `}`.
+    let len = 3 + digit_count + 1;
+
     if !(1..=6).contains(&digit_count) {
         return Err(EscapeError {
             defect: MalformedUnicode,
-            len: 3 + digit_count + 1,
+            len,
         });
     }
 
     let value = u32::from_str_radix(&after_brace[..digit_count], 16)
         .expect("one to six hexadecimal digits fit in a u32");
 
-    match char::from_u32(value) {
-        Some(c) => Ok((c, 3 + digit_count + 1)),
-        None => Err(EscapeError {
-            defect: NotScalarValue,
-            len: 3 + digit_count + 1,
-        }),
-    }
+    char::from_u32(value).map(|c| (c, len)).ok_or(EscapeError {
+        defect: NotScalarValue,
+        len,
+    })
 }
 
 #[cfg(test)]
