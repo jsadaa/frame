@@ -144,7 +144,7 @@ fn check_accepts_a_script_with_a_byte_order_mark() {
 }
 
 #[test]
-fn check_refuses_a_script_that_is_not_valid_utf8() {
+fn check_rejects_a_script_that_is_not_valid_utf8() {
     assert_refused(
         execute_command(&["check", "tests/fixtures/invalid_utf8.fm"]),
         1,
@@ -159,7 +159,7 @@ fn check_refuses_a_script_that_is_not_valid_utf8() {
 }
 
 #[test]
-fn check_refuses_a_script_too_large() {
+fn check_rejects_a_script_too_large() {
     let path = Path::new(env!("CARGO_TARGET_TMPDIR")).join("too_large.fm");
     fs::write(&path, vec![b'a'; 17 * 1024 * 1024]).expect("the large file should be written");
     let path = path
@@ -184,7 +184,7 @@ fn check_refuses_a_script_too_large() {
 // File permissions are set the Unix way.
 #[cfg(unix)]
 #[test]
-fn check_refuses_an_unreadable_script_as_a_usage_error() {
+fn check_rejects_an_unreadable_script_as_a_usage_error() {
     use std::os::unix::fs::PermissionsExt;
 
     let path = Path::new(env!("CARGO_TARGET_TMPDIR")).join("unreadable.fm");
@@ -211,7 +211,7 @@ fn check_refuses_an_unreadable_script_as_a_usage_error() {
 // Directory permissions are set the Unix way.
 #[cfg(unix)]
 #[test]
-fn check_refuses_a_script_in_an_unreadable_directory_as_a_usage_error() {
+fn check_rejects_a_script_in_an_unreadable_directory_as_a_usage_error() {
     use std::os::unix::fs::PermissionsExt;
 
     let directory = Path::new(env!("CARGO_TARGET_TMPDIR")).join("unreadable_directory");
@@ -230,7 +230,7 @@ fn check_refuses_a_script_in_an_unreadable_directory_as_a_usage_error() {
         .expect("the path of the script should be UTF-8");
 
     let outcome = execute_command(&["check", path]);
-    // Restored before any assertion, since `cargo clean` cannot remove a directory with no
+    // Restore them before any assertion: `cargo clean` can't remove a directory with no
     // permissions.
     fs::set_permissions(&directory, fs::Permissions::from_mode(0o755))
         .expect("the permissions of the unreadable directory should be restored");
@@ -245,7 +245,7 @@ fn check_refuses_a_script_in_an_unreadable_directory_as_a_usage_error() {
 }
 
 #[test]
-fn check_refuses_a_missing_target() {
+fn check_rejects_a_missing_target() {
     assert_refused(
         execute_command(&["check", "missing.fm"]),
         2,
@@ -254,7 +254,7 @@ fn check_refuses_a_missing_target() {
 }
 
 #[test]
-fn check_refuses_a_file_without_the_fm_extension() {
+fn check_rejects_a_file_without_the_fm_extension() {
     assert_refused(
         execute_command(&["check", "tests/fixtures/notes.txt"]),
         2,

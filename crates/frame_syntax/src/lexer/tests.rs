@@ -13,8 +13,9 @@ use ExpectedDiagnostic::{
 
 /// A diagnostic the lexer should report, with its byte range.
 ///
-/// Titles and helps are written out here, apart from the lexer's code. A `u32` before
-/// the range is the rule's number, when it can be LEX-13 or LEX-14.
+/// Titles and helps are spelled out here rather than taken from the lexer, so a wrong
+/// message fails the test. A `u32` before the range is the rule's number, when it can be
+/// LEX-13 or LEX-14.
 enum ExpectedDiagnostic {
     UnexpectedCharacter(char, Range<u32>),
     DocCommentNotAlone(Range<u32>),
@@ -207,9 +208,9 @@ fn assert_lexed(text: &str, expected_tokens: &[&str], expected_diagnostics: &[Ex
     );
 }
 
-/// Checks that `text` gives one token, of kind `kind`, and no diagnostic.
+/// Checks that `text` produces one token of kind `kind`, and no diagnostic.
 ///
-/// `text` is ASCII, so its length gives the end's column.
+/// `text` must be ASCII: we use its length as the end's column.
 fn assert_one_token(text: &str, kind: &str) {
     let token = format!("1:1 {kind} {text:?}");
     let end = format!(r#"1:{} Eof """#, text.len() + 1);
@@ -228,7 +229,8 @@ fn spaces_and_tabs_give_no_token() {
 
 #[test]
 fn each_operator_is_one_token() {
-    // Written from the specification's table, in its order, not from the lexer's.
+    // In the spec's order, not the lexer's: this list is the oracle, so don't copy it from
+    // the code.
     let operators: [(&str, &str); 44] = [
         ("+", "Plus"),
         ("-", "Minus"),
@@ -717,7 +719,8 @@ fn doc_comment_not_alone_on_its_line_is_reported_and_skipped() {
 
 #[test]
 fn each_keyword_is_recognized_and_gives_back_its_text() {
-    // Written from the specification's table, in its order, not from the lexer's.
+    // In the spec's order, not the lexer's: this list is the oracle, so don't copy it from
+    // the code.
     let keywords: [(&str, Keyword); 47] = [
         ("fn", Keyword::Fn),
         ("type", Keyword::Type),
@@ -892,7 +895,7 @@ fn statement_is_split_into_words_and_operators() {
 
 #[test]
 fn non_ascii_letter_ends_an_identifier() {
-    // TODO(J02): T-020 decides how a non-ASCII letter inside a word is reported.
+    // TODO(J02): decide how to report a non-ASCII letter inside a word.
     assert_lexed(
         "café",
         &[r#"1:1 Identifier "caf""#, r#"1:5 Eof """#],
@@ -944,7 +947,7 @@ fn dot_belongs_to_a_number_only_before_a_digit() {
         ],
         &[],
     );
-    // S-05: a float has digits on both sides of its point.
+    // A float needs digits on both sides of its point, so `5.` is `5` then `.`.
     assert_lexed(
         "5.",
         &[r#"1:1 Int(Some(5)) "5""#, r#"1:2 Dot ".""#, r#"1:3 Eof """#],
@@ -1008,7 +1011,7 @@ fn number_literal_gives_its_value() {
 }
 
 #[test]
-fn integer_with_a_leading_zero_is_refused() {
+fn integer_with_a_leading_zero_is_rejected() {
     assert_lexed(
         "007",
         &[r#"1:1 Int(Some(0)) "007""#, r#"1:4 Eof """#],
@@ -1083,7 +1086,7 @@ fn underscore_must_be_between_two_digits() {
 }
 
 #[test]
-fn uppercase_prefix_is_refused_with_a_fix() {
+fn uppercase_prefix_is_rejected_with_a_fix() {
     assert_lexed(
         "0X1F",
         &[r#"1:1 Int(Some(0)) "0X1F""#, r#"1:5 Eof """#],
@@ -1102,7 +1105,7 @@ fn uppercase_prefix_is_refused_with_a_fix() {
 }
 
 #[test]
-fn digit_outside_the_base_is_refused() {
+fn digit_outside_the_base_is_rejected() {
     assert_lexed(
         "0b102",
         &[r#"1:1 Int(Some(0)) "0b102""#, r#"1:6 Eof """#],
@@ -1121,7 +1124,7 @@ fn digit_outside_the_base_is_refused() {
 }
 
 #[test]
-fn prefix_without_digits_is_refused() {
+fn prefix_without_digits_is_rejected() {
     assert_lexed(
         "0x",
         &[r#"1:1 Int(Some(0)) "0x""#, r#"1:3 Eof """#],
@@ -1130,7 +1133,7 @@ fn prefix_without_digits_is_refused() {
 }
 
 #[test]
-fn number_suffix_is_refused() {
+fn number_suffix_is_rejected() {
     assert_lexed(
         "10i64",
         &[r#"1:1 Int(Some(0)) "10i64""#, r#"1:6 Eof """#],
@@ -1154,7 +1157,7 @@ fn number_suffix_is_refused() {
 }
 
 #[test]
-fn point_after_the_exponent_is_refused() {
+fn point_after_the_exponent_is_rejected() {
     assert_lexed(
         "1e5.5",
         &[r#"1:1 Float("0") "1e5.5""#, r#"1:6 Eof """#],
@@ -1163,7 +1166,7 @@ fn point_after_the_exponent_is_refused() {
 }
 
 #[test]
-fn float_not_in_decimal_is_refused() {
+fn float_not_in_decimal_is_rejected() {
     assert_lexed(
         "0x1.5",
         &[r#"1:1 Float("0") "0x1.5""#, r#"1:6 Eof """#],
@@ -1195,7 +1198,7 @@ fn number_literal_gets_one_diagnostic() {
 }
 
 #[test]
-fn lexing_goes_on_after_a_refused_literal() {
+fn lexing_goes_on_after_an_invalid_literal() {
     assert_lexed(
         "007 + 1",
         &[
@@ -1224,7 +1227,7 @@ fn literal_diagnostic_is_placed_in_the_text() {
 
 #[test]
 fn number_literal_reads_only_ascii() {
-    // `is_numeric` and `is_alphanumeric` would take these characters (C.32).
+    // `is_numeric()` and `is_alphanumeric()` would accept these characters.
     assert_lexed("٣", &[r#"1:2 Eof """#], &[UnexpectedCharacter('٣', 0..2)]);
     assert_lexed(
         "1²",
@@ -1280,7 +1283,7 @@ fn unicode_escape_gives_its_value() {
 }
 
 #[test]
-fn empty_character_literal_is_refused() {
+fn empty_character_literal_is_rejected() {
     assert_lexed(
         "''",
         &[r#"1:1 Char('�') "''""#, r#"1:3 Eof """#],
@@ -1289,7 +1292,7 @@ fn empty_character_literal_is_refused() {
 }
 
 #[test]
-fn character_literal_with_more_than_one_value_is_refused() {
+fn character_literal_with_more_than_one_value_is_rejected() {
     assert_lexed(
         "'ab'",
         &[r#"1:1 Char('�') "'ab'""#, r#"1:5 Eof """#],
@@ -1375,7 +1378,7 @@ fn backslash_does_not_take_the_line_ending() {
 }
 
 #[test]
-fn unknown_escape_is_refused() {
+fn unknown_escape_is_rejected() {
     assert_lexed(
         r"'\q'",
         &[r#"1:1 Char('�') "'\\q'""#, r#"1:5 Eof """#],
@@ -1384,7 +1387,7 @@ fn unknown_escape_is_refused() {
 }
 
 #[test]
-fn malformed_unicode_escape_is_refused() {
+fn malformed_unicode_escape_is_rejected() {
     // Without `{`, the span stops after `\u`.
     assert_lexed(
         r"'\u41'",
@@ -1416,7 +1419,7 @@ fn malformed_unicode_escape_is_refused() {
 }
 
 #[test]
-fn unicode_escape_outside_scalar_values_is_refused() {
+fn unicode_escape_outside_scalar_values_is_rejected() {
     assert_lexed(
         r"'\u{D800}'",
         &[r#"1:1 Char('�') "'\\u{D800}'""#, r#"1:11 Eof """#],
@@ -1431,7 +1434,7 @@ fn unicode_escape_outside_scalar_values_is_refused() {
 
 #[test]
 fn character_literal_gets_one_diagnostic() {
-    // The refused escape is reported, not the second value.
+    // The invalid escape is reported, not the second value.
     assert_lexed(
         r"'\qa'",
         &[r#"1:1 Char('�') "'\\qa'""#, r#"1:6 Eof """#],
@@ -1452,7 +1455,7 @@ fn character_literal_gets_one_diagnostic() {
 }
 
 #[test]
-fn lexing_goes_on_after_a_refused_character_literal() {
+fn lexing_goes_on_after_an_invalid_character_literal() {
     assert_lexed(
         "'ab' + 'c'",
         &[
@@ -1508,7 +1511,7 @@ fn help_escapes_what_a_text_would_read() {
         &[r#"1:1 Char('�') "'\\u{41}}'""#, r#"1:10 Eof """#],
         &[MoreThanOneCharacter(r"\u{41}\}", 0..9)],
     );
-    // A refused escape stays as the reader delimits it: here `\u{4`.
+    // An invalid escape stays as `read` cut it: here `\u{4`.
     assert_lexed(
         r"'a\u{4G}'",
         &[r#"1:1 Char('�') "'a\\u{4G}'""#, r#"1:10 Eof """#],
@@ -1518,7 +1521,7 @@ fn help_escapes_what_a_text_would_read() {
 
 #[test]
 fn character_literal_opens_no_delimiter() {
-    // Inside `(`, the line ending would give no token.
+    // Inside `(`, the line ending would produce no token.
     assert_lexed(
         "'('\nx",
         &[
@@ -1630,7 +1633,7 @@ fn raw_text_is_placed_in_the_text() {
 
 #[test]
 fn raw_text_opens_no_delimiter() {
-    // Inside `(`, the line ending would give no token.
+    // Inside `(`, the line ending would produce no token.
     assert_lexed(
         "r\"(\"\nx",
         &[
@@ -1700,7 +1703,7 @@ fn escapes_give_their_characters_in_one_piece() {
 }
 
 #[test]
-fn refused_escape_in_a_text_gives_u_fffd() {
+fn invalid_escape_in_a_text_gives_u_fffd() {
     // The text goes on after it.
     assert_lexed(
         r#""a\qb""#,
@@ -1890,7 +1893,6 @@ fn braces_of_a_block_in_an_interpolation_are_delimiters() {
 
 #[test]
 fn text_inside_an_interpolation_follows_the_same_rules() {
-    // The example of the lexing notion sheet, §4.
     assert_lexed(
         r#""a{f("b{x}")}c""#,
         &[
@@ -2049,7 +2051,7 @@ fn unterminated_text_runs_to_the_end_of_the_line() {
 }
 
 #[test]
-fn lone_closing_brace_is_refused_and_kept_in_the_piece() {
+fn lone_closing_brace_is_reported_and_kept_in_the_piece() {
     assert_lexed(
         r#""a}b""#,
         &[
@@ -2063,7 +2065,7 @@ fn lone_closing_brace_is_refused_and_kept_in_the_piece() {
 }
 
 #[test]
-fn empty_interpolation_is_refused() {
+fn empty_interpolation_is_rejected() {
     assert_lexed(
         r#""{}""#,
         &[
@@ -2147,7 +2149,7 @@ fn unterminated_interpolation_ends_with_its_text_at_the_line_end() {
         ],
         &[UnterminatedInterpolation(1..3)],
     );
-    // Under a `(`, which closes with the interpolation: the line ending gives a token.
+    // Under a `(`, which closes with the interpolation: the line ending produces a token.
     assert_lexed(
         "\"{f(a\n+",
         &[
@@ -2305,8 +2307,8 @@ fn closing_delimiter_does_not_cross_an_interpolation() {
         ],
         &[],
     );
-    // The `)` cannot close the outer `(`: the first line ending gives no token. The second
-    // `)` closes it: the next line ending gives one.
+    // The `)` can't close the outer `(`, so the first line ending produces no token. The
+    // second `)` closes it, so the next line ending produces one.
     assert_lexed(
         "( \"{ ) }\"\n)\n+",
         &[

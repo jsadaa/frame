@@ -121,12 +121,10 @@ fn read_bounded(path: &Path, limit: u64) -> io::Result<Vec<u8>> {
     Ok(bytes)
 }
 
-/// Decodes `bytes` as UTF-8, after removing a leading byte order mark.
+/// Strips a leading byte order mark, then decodes the rest as UTF-8.
 ///
-/// # Errors
-///
-/// If the bytes are not valid UTF-8, returns the offset of the first invalid byte (not
-/// counting the mark) and the text with each invalid sequence replaced by U+FFFD.
+/// On failure, returns the offset of the first invalid byte (not counting the mark) and the
+/// text with each invalid sequence replaced by U+FFFD.
 fn decode(mut bytes: Vec<u8>) -> Result<String, (usize, String)> {
     // A mark anywhere else stays, for the lexer to reject (LEX-2).
     if bytes.starts_with(&[0xEF, 0xBB, 0xBF]) {

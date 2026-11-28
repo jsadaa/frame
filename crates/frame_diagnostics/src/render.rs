@@ -39,8 +39,8 @@ impl Correction {
     fn new(file: &SourceFile, fix: &Fix) -> Self {
         let span = fix.span();
         let replacement = fix.replacement();
-        // Calling `line_col` first checks the span with its own panic messages, before
-        // `replace_range` uses it.
+        // Call `line_col` first: its panic messages say more about a bad span than
+        // `replace_range`'s would.
         let start_line_col = file.line_col(span.start());
         let end_line_col = file.line_col(span.end());
 
@@ -77,7 +77,7 @@ impl Correction {
     }
 }
 
-/// Renders `diagnostic` as text, in the layout of DIA-6.
+/// Renders `diagnostic` as text for the terminal.
 ///
 /// The output starts with `error[CODE]: title` and the location, then shows each source line
 /// where a span starts, with its underlines:
@@ -163,8 +163,8 @@ fn primary_file(primary: &Primary) -> FileId {
     }
 }
 
-/// Asserts that the labels and the fix are in the primary location's file, since another file
-/// would need a location line of its own.
+/// Labels and the fix must be in the primary location's file: another file would need its
+/// own location line.
 // TODO(J19): revisit when a module spans several files.
 fn assert_in_primary_file(diagnostic: &Diagnostic, primary_file: FileId, source_map: &SourceMap) {
     let name = |file| source_map.file(file).name();
@@ -210,8 +210,7 @@ fn annotations<'a>(diagnostic: &'a Diagnostic, file: &SourceFile) -> Vec<Annotat
     annotations
 }
 
-/// Returns the annotation of `span` on the line where it starts. It runs to the end of the
-/// span, or to the end of the line if the span continues on the next ones.
+/// A span over several lines is only underlined on its first line, up to the line's end.
 fn span_annotation<'a>(
     file: &SourceFile,
     span: Span,
@@ -238,8 +237,7 @@ fn span_annotation<'a>(
     }
 }
 
-/// Returns the width of the margin before each `|`, based on the largest line number shown,
-/// the fix's included.
+/// The fix's line numbers count too, so that every margin lines up.
 fn margin_width(annotations: &[Annotation], correction: Option<&Correction>) -> usize {
     annotations
         .iter()
@@ -313,7 +311,7 @@ fn excerpt_lines(
     lines
 }
 
-/// The line that stands for skipped lines. It starts in the first column, without a margin.
+/// `...` starts in the first column, with no margin.
 fn ellipsis_line() -> String {
     String::from("...")
 }
@@ -353,8 +351,7 @@ fn underline_line(line_text: &str, annotation: &Annotation, margin_width: usize)
     line
 }
 
-/// Returns the spaces and `mark`s that underline up to `char_count` characters of
-/// `line_text`, starting after its first `start` characters.
+/// Underlines up to `char_count` characters of `line_text`, after its first `start` ones.
 ///
 /// The marks stop at the end of the line. A tab is four columns wide, and an empty span still
 /// gets one mark.
@@ -448,11 +445,9 @@ fn text_from_lines(lines: &[String]) -> String {
     text
 }
 
-/// Returns `text` as displayed.
-///
-/// Each tab becomes four spaces, so that the marks below can line up with it. Each character
-/// that LEX-2 forbids becomes `�`, so that the text cannot control the terminal as a `\r` or
-/// an escape sequence would.
+/// Tabs become four spaces, so that the marks below line up. Characters that LEX-2 forbids
+/// become `�`: otherwise a `\r` or an escape sequence in the source could control the
+/// terminal.
 fn displayed_text(text: &str) -> String {
     let mut displayed = String::new();
     for c in text.chars() {

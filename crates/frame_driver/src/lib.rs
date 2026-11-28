@@ -24,7 +24,7 @@ pub enum Target {
     /// A script: a `.fm` file.
     Script(PathBuf),
     /// A package, by its directory. `None` means the nearest package that contains the
-    /// current directory (S-171).
+    /// current directory.
     Package(Option<PathBuf>),
 }
 
