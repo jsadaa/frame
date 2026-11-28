@@ -14,6 +14,8 @@ const DOC_COMMENT_NOT_ALONE_ON_ITS_LINE: RuleCode = RuleCode::new(Prefix::Lex, 6
 const RESERVED_WORD: RuleCode = RuleCode::new(Prefix::Lex, 11);
 const CHARACTER_LITERAL: RuleCode = RuleCode::new(Prefix::Lex, 15);
 const RAW_TEXT: RuleCode = RuleCode::new(Prefix::Lex, 19);
+const TEXT_LITERAL: RuleCode = RuleCode::new(Prefix::Lex, 17);
+const INTERPOLATION: RuleCode = RuleCode::new(Prefix::Lex, 20);
 
 // Kept for future versions. None has a use yet, so each one is a name, and the lexer can
 // refuse it without knowing what the word declares.
@@ -77,6 +79,28 @@ fn character_literal_with_more_than_one_character(content: &str, span: Span) -> 
 fn unterminated_raw_text(span: Span) -> Diagnostic {
     Diagnostic::new(RAW_TEXT, "unterminated raw text", Primary::span(span))
         .with_help("a raw text fits on one line and contains no `\"`")
+}
+
+fn unterminated_text(span: Span) -> Diagnostic {
+    Diagnostic::new(TEXT_LITERAL, "unterminated text", Primary::span(span))
+        .with_help(r#"a text fits on one line; for several lines, write `"""`"#)
+}
+
+fn unmatched_brace_in_text(span: Span) -> Diagnostic {
+    Diagnostic::new(TEXT_LITERAL, "unmatched `}` in a text", Primary::span(span))
+        .with_help(r"for a literal brace, write `\}`")
+}
+
+fn empty_interpolation(span: Span) -> Diagnostic {
+    Diagnostic::new(INTERPOLATION, "empty interpolation", Primary::span(span))
+}
+
+fn unterminated_interpolation(span: Span) -> Diagnostic {
+    Diagnostic::new(
+        INTERPOLATION,
+        "unterminated interpolation",
+        Primary::span(span),
+    )
 }
 
 /// A token: its kind, and the span of text it covers.
@@ -216,6 +240,18 @@ pub enum TokenKind {
     /// A raw text, such as `r"C:\Users"`. It holds the characters between the quotes, as
     /// written; without the closing quote, those up to the end of the line.
     RawText(String),
+    /// todo!
+    TextStart,
+    /// todo!
+    TextPiece(String),
+    /// todo!
+    TextEnd,
+    /// todo!
+    InterpolationStart,
+    /// todo!
+    InterpolationEnd,
+    /// todo!
+    Format(String),
     /// `_` alone, the wildcard of patterns. `_x` is an identifier.
     Underscore,
     /// A line ending: `\n` or `\r\n`.
@@ -230,6 +266,31 @@ enum Open {
     Paren,
     Bracket,
     Brace,
+    Interpolation(Interpolation),
+}
+
+impl Open {
+    /// Returns the delimiter's index in `Lexer::open_counts`, or `None` for an interpolation,
+    /// which is not counted.
+    fn index(&self) -> Option<usize> {
+        match self {
+            Open::Paren => Some(0),
+            Open::Bracket => Some(1),
+            Open::Brace => Some(2),
+            Open::Interpolation(_) => None,
+        }
+    }
+}
+
+/// An interpolation not closed yet.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+struct Interpolation {
+    /// Where its text starts, at the `"`.
+    text_start: usize,
+    /// Where it starts, at the `{`.
+    brace_start: usize,
+    /// The counts of the delimiters open outside it, put back when it closes.
+    outer_counts: [usize; 3],
 }
 
 /// A keyword.
@@ -550,7 +611,8 @@ struct Lexer<'a> {
     tokens: Vec<Token>,
     /// The delimiters not closed yet, innermost last.
     open_delimiters: Vec<Open>,
-    /// How many delimiters of each kind `open_delimiters` holds, indexed by `Open as usize`.
+    /// How many delimiters of each kind `open_delimiters` holds above the innermost
+    /// interpolation, indexed by `Open::index`.
     open_counts: [usize; 3],
 }
 
@@ -581,6 +643,10 @@ impl<'a> Lexer<'a> {
                     self.cursor.advance();
                 }
                 '\n' | '\r' => {
+                    if self.cursor.at_line_end() {
+                        self.close_interpolations_at_line_end();
+                    }
+
                     if let Some(token) = self.read_newline() {
                         if self.keeps_newline() {
                             self.tokens.push(token);
@@ -590,7 +656,8 @@ impl<'a> Lexer<'a> {
                         self.skip_unexpected(c);
                     }
                 }
-                '/' if self.cursor.second() == Some('/') => {
+                // In an interpolation, `//` is two `/` (LEX-5).
+                '/' if self.cursor.second() == Some('/') && !self.in_interpolation() => {
                     if let Some(token) = self.read_comment() {
                         self.tokens.push(token);
                     }
@@ -598,6 +665,48 @@ impl<'a> Lexer<'a> {
                 '\'' => {
                     let token = self.read_char();
                     self.tokens.push(token);
+                }
+                '"' => {
+                    let start = self.cursor.position();
+                    self.cursor.advance();
+                    self.tokens
+                        .push(Token::new(TokenKind::TextStart, self.span_from(start)));
+
+                    self.read_text(start);
+                }
+                '}' if self.closes_interpolation() => {
+                    let start = self.cursor.position();
+                    let interpolation = self.close_interpolation();
+                    self.cursor.advance();
+
+                    // `{` is one byte. Not `trim`, which also takes Unicode spaces (C.32).
+                    let inside = &self.text[interpolation.brace_start + 1..start];
+                    if inside.chars().all(|c| matches!(c, ' ' | '\t')) {
+                        self.diagnostics.push(empty_interpolation(
+                            self.span_from(interpolation.brace_start),
+                        ));
+                    }
+
+                    self.tokens.push(Token::new(
+                        TokenKind::InterpolationEnd,
+                        self.span_from(start),
+                    ));
+
+                    self.read_text(interpolation.text_start);
+                }
+                ':' if matches!(self.open_delimiters.last(), Some(Open::Interpolation(_))) => {
+                    let start = self.cursor.position();
+
+                    while !self.cursor.at_line_end() && self.cursor.first() != Some('}') {
+                        self.cursor.advance();
+                    }
+
+                    // `:` is one byte.
+                    let content = &self.text[start + 1..self.cursor.position()];
+                    self.tokens.push(Token::new(
+                        TokenKind::Format(content.to_string()),
+                        self.span_from(start),
+                    ));
                 }
                 // Before words: they would read `r` as an identifier.
                 'r' if self.cursor.second() == Some('"') => {
@@ -629,6 +738,9 @@ impl<'a> Lexer<'a> {
                 "the lexer did not move at byte {before}"
             );
         }
+
+        // The end of the file is also a line end.
+        self.close_interpolations_at_line_end();
 
         self.tokens.push(Token::new(
             TokenKind::Eof,
@@ -707,6 +819,102 @@ impl<'a> Lexer<'a> {
         }
 
         Token::new(TokenKind::Char(value), span)
+    }
+
+    fn read_text(&mut self, text_start: usize) {
+        let mut text_buffer = String::new();
+        let piece_start = self.cursor.position();
+
+        while let Some(c) = self.cursor.first() {
+            match c {
+                '"' => {
+                    let start = self.cursor.position();
+
+                    if !text_buffer.is_empty() {
+                        self.tokens.push(Token::new(
+                            TokenKind::TextPiece(std::mem::take(&mut text_buffer)),
+                            self.span_from(piece_start),
+                        ));
+                    }
+
+                    self.cursor.advance();
+                    self.tokens
+                        .push(Token::new(TokenKind::TextEnd, self.span_from(start)));
+
+                    return;
+                }
+                '{' => {
+                    let start = self.cursor.position();
+
+                    if !text_buffer.is_empty() {
+                        self.tokens.push(Token::new(
+                            TokenKind::TextPiece(std::mem::take(&mut text_buffer)),
+                            self.span_from(piece_start),
+                        ));
+                    }
+
+                    self.cursor.advance();
+                    self.tokens.push(Token::new(
+                        TokenKind::InterpolationStart,
+                        self.span_from(start),
+                    ));
+                    self.open_interpolation(text_start, start);
+
+                    return;
+                }
+                '\\' => {
+                    let start = self.cursor.position();
+                    let rest = self.cursor.as_str();
+                    let end = match escape::read(rest) {
+                        Ok((c, len)) => {
+                            text_buffer.push(c);
+                            start + len
+                        }
+                        Err(error) => {
+                            text_buffer.push(char::REPLACEMENT_CHARACTER);
+                            self.diagnostics
+                                .push(error.to_diagnostic(rest, self.file, start));
+
+                            start + error.len()
+                        }
+                    };
+
+                    while self.cursor.position() < end {
+                        self.cursor.advance();
+                    }
+                }
+                _ if self.cursor.at_line_end() => break,
+                // Reported, but kept in the piece.
+                '}' => {
+                    let start = self.cursor.position();
+                    self.cursor.advance();
+
+                    self.diagnostics
+                        .push(unmatched_brace_in_text(self.span_from(start)));
+                    text_buffer.push('}');
+                }
+                c => {
+                    text_buffer.push(c);
+                    self.cursor.advance();
+                }
+            }
+        }
+
+        // The line end, or the end of the file, ends the text.
+        self.diagnostics
+            .push(unterminated_text(self.span_from(text_start)));
+
+        if !text_buffer.is_empty() {
+            self.tokens.push(Token::new(
+                TokenKind::TextPiece(text_buffer),
+                self.span_from(piece_start),
+            ));
+        }
+
+        self.tokens.push(Token::new(
+            TokenKind::TextEnd,
+            self.span_from(self.cursor.position()),
+        ));
     }
 
     /// Reads a raw text, up to its closing `"` on the same line. An unterminated raw text is
@@ -922,8 +1130,15 @@ impl<'a> Lexer<'a> {
     }
 
     fn open(&mut self, delimiter: Open) {
-        self.open_delimiters.push(delimiter);
-        self.open_counts[delimiter as usize] += 1;
+        if let Some(i) = delimiter.index() {
+            self.open_delimiters.push(delimiter);
+            self.open_counts[i] += 1;
+        }
+    }
+
+    /// Returns how many `delimiter` are open above the innermost interpolation.
+    fn open_count(&self, delimiter: Open) -> usize {
+        delimiter.index().map_or(0, |i| self.open_counts[i])
     }
 
     /// Closes `delimiter`, and any delimiter left open inside it.
@@ -932,15 +1147,84 @@ impl<'a> Lexer<'a> {
     /// line ending into a space. The counts tell it at once; a search through the stack would
     /// make `((((…]]]]` quadratic.
     fn close(&mut self, delimiter: Open) {
-        if self.open_counts[delimiter as usize] == 0 {
+        if self.open_count(delimiter) == 0 {
             return;
         }
 
         while let Some(open) = self.open_delimiters.pop() {
-            self.open_counts[open as usize] -= 1;
-            if open == delimiter {
-                break;
+            if let Some(i) = open.index() {
+                self.open_counts[i] -= 1;
+                if open == delimiter {
+                    break;
+                }
             }
+        }
+    }
+
+    /// Returns whether an interpolation is open.
+    fn in_interpolation(&self) -> bool {
+        // Every counted delimiter lies above the innermost interpolation, so the stack holds
+        // more than the counts only when an interpolation is open.
+        self.open_delimiters.len() > self.open_counts.iter().sum::<usize>()
+    }
+
+    /// Returns whether a `}` read now closes an interpolation: one is open, and no `{` is left
+    /// open inside it.
+    fn closes_interpolation(&self) -> bool {
+        self.in_interpolation() && self.open_count(Open::Brace) == 0
+    }
+
+    fn open_interpolation(&mut self, text_start: usize, brace_start: usize) {
+        // A delimiter inside the interpolation cannot close one outside it. So the counts
+        // start again from zero, and the outer ones come back when it closes.
+        let outer_counts = std::mem::take(&mut self.open_counts);
+
+        self.open_delimiters
+            .push(Open::Interpolation(Interpolation {
+                text_start,
+                brace_start,
+                outer_counts,
+            }));
+    }
+
+    /// Closes the innermost interpolation, and any delimiter left open inside it, then
+    /// returns it.
+    fn close_interpolation(&mut self) -> Interpolation {
+        while let Some(open) = self.open_delimiters.pop() {
+            if let Open::Interpolation(interpolation) = open {
+                self.open_counts = interpolation.outer_counts;
+                return interpolation;
+            }
+        }
+
+        unreachable!("the caller checked that an interpolation is open")
+    }
+
+    /// Closes each interpolation still open, with its text: neither holds a line ending.
+    /// Their end tokens are empty, at the line end.
+    ///
+    /// Only the innermost text or interpolation cut by the line end reports it.
+    fn close_interpolations_at_line_end(&mut self) {
+        // An empty `TextEnd` comes from a text cut by this line end, which reported it.
+        let mut reported = self
+            .tokens
+            .last()
+            .is_some_and(|token| *token.kind() == TokenKind::TextEnd && token.span().is_empty());
+
+        while self.in_interpolation() {
+            let interpolation = self.close_interpolation();
+
+            if !reported {
+                self.diagnostics.push(unterminated_interpolation(
+                    self.span_from(interpolation.brace_start),
+                ));
+                reported = true;
+            }
+
+            let end = self.span_from(self.cursor.position());
+            self.tokens
+                .push(Token::new(TokenKind::InterpolationEnd, end));
+            self.tokens.push(Token::new(TokenKind::TextEnd, end));
         }
     }
 }
