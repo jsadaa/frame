@@ -537,7 +537,7 @@ fn crlf_is_neither_shown_nor_underlined() {
 }
 
 #[test]
-fn characters_refused_by_lex_2_are_written_as_replacement_characters() {
+fn characters_forbidden_by_lex_2_are_written_as_replacement_characters() {
     let (source_map, file) =
         source_map_with_file("demo.fm", "print(\"\r\u{1b}\u{202E}\") # done\n");
     let diagnostic = Diagnostic::new(
@@ -563,10 +563,10 @@ fn characters_refused_by_lex_2_are_written_as_replacement_characters() {
 }
 
 #[test]
-fn every_character_refused_by_lex_2_is_written_as_a_replacement_character() {
+fn every_character_forbidden_by_lex_2_is_written_as_a_replacement_character() {
     // LEX-2's list, written from the rule rather than from the code. A CR is refused here,
     // since no line feed follows it.
-    let refused = ('\u{0}'..='\u{1F}')
+    let forbidden = ('\u{0}'..='\u{1F}')
         .filter(|&c| c != '\t' && c != '\n')
         .chain('\u{7F}'..='\u{9F}')
         .chain(['\u{061C}', '\u{200E}', '\u{200F}'])
@@ -574,7 +574,7 @@ fn every_character_refused_by_lex_2_is_written_as_a_replacement_character() {
         .chain('\u{2066}'..='\u{2069}')
         .chain(['\u{FEFF}']);
 
-    for c in refused {
+    for c in forbidden {
         let (source_map, file) =
             source_map_with_file("demo.fm", &format!("print(\"{c}\") # done\n"));
         let diagnostic = Diagnostic::new(
@@ -599,7 +599,7 @@ fn every_character_refused_by_lex_2_is_written_as_a_replacement_character() {
 }
 
 #[test]
-fn neighbors_of_the_characters_refused_by_lex_2_are_written_as_they_are() {
+fn neighbors_of_the_characters_forbidden_by_lex_2_are_written_as_they_are() {
     // The character just outside each LEX-2 range, so that a range that grows is caught.
     let allowed = [
         '\u{20}', '\u{7E}', '\u{A0}', '\u{061B}', '\u{061D}', '\u{200D}', '\u{2010}', '\u{2029}',
@@ -634,7 +634,7 @@ fn neighbors_of_the_characters_refused_by_lex_2_are_written_as_they_are() {
 }
 
 #[test]
-fn characters_refused_by_lex_2_in_the_texts_are_written_as_replacement_characters() {
+fn characters_forbidden_by_lex_2_in_the_texts_are_written_as_replacement_characters() {
     let (source_map, file) = source_map_with_file("demo.fm", "print(\"\u{202E}\")\n");
     let diagnostic = Diagnostic::new(
         FORBIDDEN_CHARACTER,
@@ -664,7 +664,7 @@ fn characters_refused_by_lex_2_in_the_texts_are_written_as_replacement_character
 }
 
 #[test]
-fn characters_refused_by_lex_2_in_the_file_name_are_written_as_replacement_characters() {
+fn characters_forbidden_by_lex_2_in_the_file_name_are_written_as_replacement_characters() {
     // `ESC [2J` would clear the screen.
     let (source_map, file) = source_map_with_file("a\u{1b}[2Jb.fm", "if a && b {\n");
     let diagnostic = Diagnostic::new(
@@ -1079,7 +1079,7 @@ fn label_over_two_lines_is_underlined_to_the_end_of_the_first() {
 }
 
 #[test]
-fn characters_refused_by_lex_2_in_a_label_are_written_as_replacement_characters() {
+fn characters_forbidden_by_lex_2_in_a_label_are_written_as_replacement_characters() {
     let (source_map, file) = source_map_with_file("demo.fm", "print(\"\u{202E}\")\n");
     let diagnostic = Diagnostic::new(
         FORBIDDEN_CHARACTER,
@@ -1550,7 +1550,7 @@ fn whole_file_shows_its_fix() {
 #[should_panic(
     expected = "a label must be in the file of the primary location, 'src/main.fm', not in 'src/shapes.fm'"
 )]
-fn refuses_a_label_in_another_file() {
+fn rejects_a_label_in_another_file() {
     // The files of a module share one scope (NAM-1).
     let mut source_map = SourceMap::new();
     let main = source_map.add(String::from("src/main.fm"), String::from("let area = 3\n"));
@@ -1575,7 +1575,7 @@ fn refuses_a_label_in_another_file() {
 #[should_panic(
     expected = "a label must be in the file of the primary location, 'src/main.fm', not in 'src/shapes.fm'"
 )]
-fn refuses_a_label_in_another_file_for_a_whole_file() {
+fn rejects_a_label_in_another_file_for_a_whole_file() {
     let mut source_map = SourceMap::new();
     let main = source_map.add(
         String::from("src/main.fm"),
@@ -1599,7 +1599,7 @@ fn refuses_a_label_in_another_file_for_a_whole_file() {
 #[should_panic(
     expected = "the fix must be in the file of the primary location, 'src/main.fm', not in 'src/orders.fm'"
 )]
-fn refuses_a_fix_in_another_file() {
+fn rejects_a_fix_in_another_file() {
     let mut source_map = SourceMap::new();
     let main = source_map.add(
         String::from("src/main.fm"),
@@ -1626,7 +1626,7 @@ fn refuses_a_fix_in_another_file() {
 #[should_panic(
     expected = "the fix must be in the file of the primary location, 'src/main.fm', not in 'src/orders.fm'"
 )]
-fn refuses_a_fix_in_another_file_for_a_whole_file() {
+fn rejects_a_fix_in_another_file_for_a_whole_file() {
     let mut source_map = SourceMap::new();
     let main = source_map.add(String::from("src/main.fm"), String::from("report()\n"));
     let orders = source_map.add(String::from("src/orders.fm"), String::from("report()\n"));

@@ -131,7 +131,7 @@ mod tests {
 
     type Read = Result<(char, usize), EscapeError>;
 
-    fn refused(defect: Defect, len: usize) -> Read {
+    fn invalid(defect: Defect, len: usize) -> Read {
         Err(EscapeError { defect, len })
     }
 
@@ -186,48 +186,48 @@ mod tests {
     }
 
     #[test]
-    fn unknown_escape_is_refused() {
+    fn unknown_escape_is_rejected() {
         assert_read(&[
-            (r"\q", refused(Unknown, 2)),
-            (r"\U", refused(Unknown, 2)),
-            (r"\x41", refused(Unknown, 2)),
+            (r"\q", invalid(Unknown, 2)),
+            (r"\U", invalid(Unknown, 2)),
+            (r"\x41", invalid(Unknown, 2)),
             // The span takes the whole character after `\`.
-            (r"\é", refused(Unknown, 3)),
+            (r"\é", invalid(Unknown, 3)),
             // Only `\` was read.
-            (r"\", refused(Unknown, 1)),
+            (r"\", invalid(Unknown, 1)),
             // An escape never takes a line ending.
-            ("\\\nx", refused(Unknown, 1)),
-            ("\\\r\nx", refused(Unknown, 1)),
+            ("\\\nx", invalid(Unknown, 1)),
+            ("\\\r\nx", invalid(Unknown, 1)),
         ]);
     }
 
     #[test]
-    fn malformed_unicode_escape_is_refused() {
+    fn malformed_unicode_escape_is_rejected() {
         assert_read(&[
             // No `{`: only `\u` was read.
-            (r"\u41", refused(MalformedUnicode, 2)),
-            (r"\u", refused(MalformedUnicode, 2)),
+            (r"\u41", invalid(MalformedUnicode, 2)),
+            (r"\u", invalid(MalformedUnicode, 2)),
             // No `}` after the digits: `\u{` and the digits were read.
-            (r"\u{4G}", refused(MalformedUnicode, 4)),
-            (r"\u{41", refused(MalformedUnicode, 5)),
-            (r"\u{41'", refused(MalformedUnicode, 5)),
+            (r"\u{4G}", invalid(MalformedUnicode, 4)),
+            (r"\u{41", invalid(MalformedUnicode, 5)),
+            (r"\u{41'", invalid(MalformedUnicode, 5)),
             // `from_str_radix` would accept the sign.
-            (r"\u{+41}", refused(MalformedUnicode, 3)),
+            (r"\u{+41}", invalid(MalformedUnicode, 3)),
             // `}` after the digits: the whole escape was read.
-            (r"\u{}", refused(MalformedUnicode, 4)),
-            (r"\u{1234567}", refused(MalformedUnicode, 11)),
+            (r"\u{}", invalid(MalformedUnicode, 4)),
+            (r"\u{1234567}", invalid(MalformedUnicode, 11)),
             // Seven digits are rejected even when the value is valid.
-            (r"\u{0000041}", refused(MalformedUnicode, 11)),
+            (r"\u{0000041}", invalid(MalformedUnicode, 11)),
         ]);
     }
 
     #[test]
-    fn unicode_escape_outside_scalar_values_is_refused() {
+    fn unicode_escape_outside_scalar_values_is_rejected() {
         assert_read(&[
-            (r"\u{D800}", refused(NotScalarValue, 8)),
-            (r"\u{DFFF}", refused(NotScalarValue, 8)),
-            (r"\u{110000}", refused(NotScalarValue, 10)),
-            (r"\u{FFFFFF}", refused(NotScalarValue, 10)),
+            (r"\u{D800}", invalid(NotScalarValue, 8)),
+            (r"\u{DFFF}", invalid(NotScalarValue, 8)),
+            (r"\u{110000}", invalid(NotScalarValue, 10)),
+            (r"\u{FFFFFF}", invalid(NotScalarValue, 10)),
         ]);
     }
 }

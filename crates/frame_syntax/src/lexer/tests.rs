@@ -1011,7 +1011,7 @@ fn number_literal_gives_its_value() {
 }
 
 #[test]
-fn integer_with_a_leading_zero_is_refused() {
+fn integer_with_a_leading_zero_is_rejected() {
     assert_lexed(
         "007",
         &[r#"1:1 Int(Some(0)) "007""#, r#"1:4 Eof """#],
@@ -1086,7 +1086,7 @@ fn underscore_must_be_between_two_digits() {
 }
 
 #[test]
-fn uppercase_prefix_is_refused_with_a_fix() {
+fn uppercase_prefix_is_rejected_with_a_fix() {
     assert_lexed(
         "0X1F",
         &[r#"1:1 Int(Some(0)) "0X1F""#, r#"1:5 Eof """#],
@@ -1105,7 +1105,7 @@ fn uppercase_prefix_is_refused_with_a_fix() {
 }
 
 #[test]
-fn digit_outside_the_base_is_refused() {
+fn digit_outside_the_base_is_rejected() {
     assert_lexed(
         "0b102",
         &[r#"1:1 Int(Some(0)) "0b102""#, r#"1:6 Eof """#],
@@ -1124,7 +1124,7 @@ fn digit_outside_the_base_is_refused() {
 }
 
 #[test]
-fn prefix_without_digits_is_refused() {
+fn prefix_without_digits_is_rejected() {
     assert_lexed(
         "0x",
         &[r#"1:1 Int(Some(0)) "0x""#, r#"1:3 Eof """#],
@@ -1133,7 +1133,7 @@ fn prefix_without_digits_is_refused() {
 }
 
 #[test]
-fn number_suffix_is_refused() {
+fn number_suffix_is_rejected() {
     assert_lexed(
         "10i64",
         &[r#"1:1 Int(Some(0)) "10i64""#, r#"1:6 Eof """#],
@@ -1157,7 +1157,7 @@ fn number_suffix_is_refused() {
 }
 
 #[test]
-fn point_after_the_exponent_is_refused() {
+fn point_after_the_exponent_is_rejected() {
     assert_lexed(
         "1e5.5",
         &[r#"1:1 Float("0") "1e5.5""#, r#"1:6 Eof """#],
@@ -1166,7 +1166,7 @@ fn point_after_the_exponent_is_refused() {
 }
 
 #[test]
-fn float_not_in_decimal_is_refused() {
+fn float_not_in_decimal_is_rejected() {
     assert_lexed(
         "0x1.5",
         &[r#"1:1 Float("0") "0x1.5""#, r#"1:6 Eof """#],
@@ -1198,7 +1198,7 @@ fn number_literal_gets_one_diagnostic() {
 }
 
 #[test]
-fn lexing_goes_on_after_a_refused_literal() {
+fn lexing_goes_on_after_an_invalid_literal() {
     assert_lexed(
         "007 + 1",
         &[
@@ -1283,7 +1283,7 @@ fn unicode_escape_gives_its_value() {
 }
 
 #[test]
-fn empty_character_literal_is_refused() {
+fn empty_character_literal_is_rejected() {
     assert_lexed(
         "''",
         &[r#"1:1 Char('�') "''""#, r#"1:3 Eof """#],
@@ -1292,7 +1292,7 @@ fn empty_character_literal_is_refused() {
 }
 
 #[test]
-fn character_literal_with_more_than_one_value_is_refused() {
+fn character_literal_with_more_than_one_value_is_rejected() {
     assert_lexed(
         "'ab'",
         &[r#"1:1 Char('�') "'ab'""#, r#"1:5 Eof """#],
@@ -1378,7 +1378,7 @@ fn backslash_does_not_take_the_line_ending() {
 }
 
 #[test]
-fn unknown_escape_is_refused() {
+fn unknown_escape_is_rejected() {
     assert_lexed(
         r"'\q'",
         &[r#"1:1 Char('�') "'\\q'""#, r#"1:5 Eof """#],
@@ -1387,7 +1387,7 @@ fn unknown_escape_is_refused() {
 }
 
 #[test]
-fn malformed_unicode_escape_is_refused() {
+fn malformed_unicode_escape_is_rejected() {
     // Without `{`, the span stops after `\u`.
     assert_lexed(
         r"'\u41'",
@@ -1419,7 +1419,7 @@ fn malformed_unicode_escape_is_refused() {
 }
 
 #[test]
-fn unicode_escape_outside_scalar_values_is_refused() {
+fn unicode_escape_outside_scalar_values_is_rejected() {
     assert_lexed(
         r"'\u{D800}'",
         &[r#"1:1 Char('�') "'\\u{D800}'""#, r#"1:11 Eof """#],
@@ -1455,7 +1455,7 @@ fn character_literal_gets_one_diagnostic() {
 }
 
 #[test]
-fn lexing_goes_on_after_a_refused_character_literal() {
+fn lexing_goes_on_after_an_invalid_character_literal() {
     assert_lexed(
         "'ab' + 'c'",
         &[
@@ -1703,7 +1703,7 @@ fn escapes_give_their_characters_in_one_piece() {
 }
 
 #[test]
-fn refused_escape_in_a_text_gives_u_fffd() {
+fn invalid_escape_in_a_text_gives_u_fffd() {
     // The text goes on after it.
     assert_lexed(
         r#""a\qb""#,
@@ -2051,7 +2051,7 @@ fn unterminated_text_runs_to_the_end_of_the_line() {
 }
 
 #[test]
-fn lone_closing_brace_is_refused_and_kept_in_the_piece() {
+fn lone_closing_brace_is_reported_and_kept_in_the_piece() {
     assert_lexed(
         r#""a}b""#,
         &[
@@ -2065,7 +2065,7 @@ fn lone_closing_brace_is_refused_and_kept_in_the_piece() {
 }
 
 #[test]
-fn empty_interpolation_is_refused() {
+fn empty_interpolation_is_rejected() {
     assert_lexed(
         r#""{}""#,
         &[

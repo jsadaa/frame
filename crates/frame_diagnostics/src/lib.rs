@@ -605,13 +605,13 @@ mod tests {
 
     #[test]
     #[should_panic(expected = "the title of a diagnostic must fit on one line: \"two\\nlines\"")]
-    fn refuses_a_title_on_two_lines() {
+    fn rejects_a_title_on_two_lines() {
         let _ = Diagnostic::new(INVALID_UTF8, "two\nlines", Primary::file(add_file("")));
     }
 
     #[test]
     #[should_panic(expected = "the title of a diagnostic must fit on one line: \"title\\n\"")]
-    fn refuses_a_title_ending_with_a_newline() {
+    fn rejects_a_title_ending_with_a_newline() {
         let _ = Diagnostic::new(INVALID_UTF8, "title\n", Primary::file(add_file("")));
     }
 
@@ -619,7 +619,7 @@ mod tests {
     #[should_panic(
         expected = "the message of the primary location of a diagnostic must fit on one line: \"two\\nlines\""
     )]
-    fn refuses_a_primary_message_on_two_lines() {
+    fn rejects_a_primary_message_on_two_lines() {
         let _ = Diagnostic::new(
             RuleCode::new(Prefix::Cnf, 6),
             "title",
@@ -634,48 +634,48 @@ mod tests {
     #[should_panic(
         expected = "the message of a label of a diagnostic must fit on one line: \"two\\nlines\""
     )]
-    fn refuses_a_label_on_two_lines() {
+    fn rejects_a_label_on_two_lines() {
         let span = Span::new(add_file("if a && b {\n}\n"), 3, 4);
         Label::new(span, "two\nlines");
     }
 
     #[test]
     #[should_panic(expected = "the reason of a diagnostic must fit on one line: \"two\\nlines\"")]
-    fn refuses_a_reason_on_two_lines() {
+    fn rejects_a_reason_on_two_lines() {
         let diagnostic = Diagnostic::new(INVALID_UTF8, "title", Primary::file(add_file("")));
         let _ = diagnostic.with_reason("two\nlines");
     }
 
     #[test]
     #[should_panic(expected = "the help of a diagnostic must fit on one line: \"two\\nlines\"")]
-    fn refuses_a_help_on_two_lines() {
+    fn rejects_a_help_on_two_lines() {
         let diagnostic = Diagnostic::new(INVALID_UTF8, "title", Primary::file(add_file("")));
         let _ = diagnostic.with_help("two\nlines");
     }
 
     #[test]
     #[should_panic(expected = "the title of a diagnostic cannot be empty")]
-    fn refuses_an_empty_title() {
+    fn rejects_an_empty_title() {
         let _ = Diagnostic::new(INVALID_UTF8, "", Primary::file(add_file("")));
     }
 
     #[test]
     #[should_panic(expected = "the message of a label of a diagnostic cannot be empty")]
-    fn refuses_an_empty_label() {
+    fn rejects_an_empty_label() {
         let span = Span::new(add_file("if a && b {\n}\n"), 3, 4);
         Label::new(span, "");
     }
 
     #[test]
     #[should_panic(expected = "the reason of a diagnostic cannot be empty")]
-    fn refuses_an_empty_reason() {
+    fn rejects_an_empty_reason() {
         let diagnostic = Diagnostic::new(INVALID_UTF8, "title", Primary::file(add_file("")));
         let _ = diagnostic.with_reason("");
     }
 
     #[test]
     #[should_panic(expected = "the help of a diagnostic cannot be empty")]
-    fn refuses_an_empty_help() {
+    fn rejects_an_empty_help() {
         let diagnostic = Diagnostic::new(INVALID_UTF8, "title", Primary::file(add_file("")));
         let _ = diagnostic.with_help("");
     }

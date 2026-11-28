@@ -400,7 +400,7 @@ mod tests {
         Ok(TokenKind::Float(text.to_string()))
     }
 
-    fn refused(defect: Defect, range: Range<usize>, is_float: bool) -> Validated {
+    fn invalid(defect: Defect, range: Range<usize>, is_float: bool) -> Validated {
         Err(NumberError {
             defect,
             range,
@@ -457,84 +457,84 @@ mod tests {
     }
 
     #[test]
-    fn integer_with_a_leading_zero_is_refused() {
-        assert_validated(&[("007", refused(LeadingZero, 0..3, false))]);
+    fn integer_with_a_leading_zero_is_rejected() {
+        assert_validated(&[("007", invalid(LeadingZero, 0..3, false))]);
     }
 
     #[test]
     fn underscore_must_be_between_two_digits() {
         assert_validated(&[
-            ("1__0", refused(MisplacedUnderscore, 1..2, false)),
-            ("1_", refused(MisplacedUnderscore, 1..2, false)),
-            ("0x_1", refused(MisplacedUnderscore, 2..3, false)),
-            ("1_e5", refused(MisplacedUnderscore, 1..2, true)),
+            ("1__0", invalid(MisplacedUnderscore, 1..2, false)),
+            ("1_", invalid(MisplacedUnderscore, 1..2, false)),
+            ("0x_1", invalid(MisplacedUnderscore, 2..3, false)),
+            ("1_e5", invalid(MisplacedUnderscore, 1..2, true)),
         ]);
     }
 
     #[test]
-    fn uppercase_prefix_is_refused() {
+    fn uppercase_prefix_is_rejected() {
         assert_validated(&[
-            ("0X1F", refused(UppercasePrefix, 0..2, false)),
-            ("0B1", refused(UppercasePrefix, 0..2, false)),
-            ("0O7", refused(UppercasePrefix, 0..2, false)),
+            ("0X1F", invalid(UppercasePrefix, 0..2, false)),
+            ("0B1", invalid(UppercasePrefix, 0..2, false)),
+            ("0O7", invalid(UppercasePrefix, 0..2, false)),
             // The point makes it a float, so LEX-14 reports it.
-            ("0X1.5", refused(UppercasePrefix, 0..2, true)),
+            ("0X1.5", invalid(UppercasePrefix, 0..2, true)),
         ]);
     }
 
     #[test]
     fn digit_outside_the_base_is_invalid() {
         assert_validated(&[
-            ("0b102", refused(InvalidDigit(Base::Binary), 4..5, false)),
-            ("0o8", refused(InvalidDigit(Base::Octal), 2..3, false)),
-            ("0xG", refused(InvalidDigit(Base::Hexadecimal), 2..3, false)),
+            ("0b102", invalid(InvalidDigit(Base::Binary), 4..5, false)),
+            ("0o8", invalid(InvalidDigit(Base::Octal), 2..3, false)),
+            ("0xG", invalid(InvalidDigit(Base::Hexadecimal), 2..3, false)),
             // Only the digit, not what follows it.
-            ("0oa7", refused(InvalidDigit(Base::Octal), 2..3, false)),
+            ("0oa7", invalid(InvalidDigit(Base::Octal), 2..3, false)),
             // The `2` is a digit, so the `_` before it is in place.
-            ("0b1_2", refused(InvalidDigit(Base::Binary), 4..5, false)),
+            ("0b1_2", invalid(InvalidDigit(Base::Binary), 4..5, false)),
         ]);
     }
 
     #[test]
-    fn prefix_without_digits_is_refused() {
-        assert_validated(&[("0x", refused(MissingDigits, 0..2, false))]);
+    fn prefix_without_digits_is_rejected() {
+        assert_validated(&[("0x", invalid(MissingDigits, 0..2, false))]);
     }
 
     #[test]
     fn letter_after_the_digits_starts_a_suffix() {
         assert_validated(&[
-            ("10i64", refused(Suffix, 2..5, false)),
-            ("1e", refused(Suffix, 1..2, false)),
-            ("1.5f32", refused(Suffix, 3..6, true)),
-            ("0x1z", refused(Suffix, 3..4, false)),
-            ("0b1a", refused(Suffix, 3..4, false)),
+            ("10i64", invalid(Suffix, 2..5, false)),
+            ("1e", invalid(Suffix, 1..2, false)),
+            ("1.5f32", invalid(Suffix, 3..6, true)),
+            ("0x1z", invalid(Suffix, 3..4, false)),
+            ("0b1a", invalid(Suffix, 3..4, false)),
             // Only a decimal literal has an exponent.
-            ("0b1e5", refused(Suffix, 3..5, false)),
+            ("0b1e5", invalid(Suffix, 3..5, false)),
             // `0d` is not a prefix.
-            ("0d34", refused(Suffix, 1..4, false)),
+            ("0d34", invalid(Suffix, 1..4, false)),
             // After an exponent, letters still make a suffix.
-            ("1e5f32", refused(Suffix, 3..6, true)),
+            ("1e5f32", invalid(Suffix, 3..6, true)),
             // An `e` with no digit after it is a letter, not a second exponent.
-            ("1e5e", refused(Suffix, 3..4, true)),
+            ("1e5e", invalid(Suffix, 3..4, true)),
         ]);
     }
 
     #[test]
-    fn point_or_exponent_after_the_exponent_is_refused() {
+    fn point_or_exponent_after_the_exponent_is_rejected() {
         assert_validated(&[
-            ("1e5.5", refused(AfterExponent, 3..5, true)),
-            ("1e5e5", refused(AfterExponent, 3..5, true)),
-            ("1e+5e+5", refused(AfterExponent, 4..7, true)),
+            ("1e5.5", invalid(AfterExponent, 3..5, true)),
+            ("1e5e5", invalid(AfterExponent, 3..5, true)),
+            ("1e+5e+5", invalid(AfterExponent, 4..7, true)),
         ]);
     }
 
     #[test]
     fn float_must_be_decimal() {
-        assert_validated(&[("0x1.5", refused(FloatNotDecimal, 0..5, true))]);
+        assert_validated(&[("0x1.5", invalid(FloatNotDecimal, 0..5, true))]);
     }
 
     #[test]
     fn only_the_first_defect_is_reported() {
-        assert_validated(&[("0X1__0", refused(UppercasePrefix, 0..2, false))]);
+        assert_validated(&[("0X1__0", invalid(UppercasePrefix, 0..2, false))]);
     }
 }
