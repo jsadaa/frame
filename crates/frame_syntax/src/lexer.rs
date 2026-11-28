@@ -614,6 +614,9 @@ struct Lexer<'a> {
     /// How many delimiters of each kind `open_delimiters` holds above the innermost
     /// interpolation, indexed by `Delimiter as usize`.
     open_counts: [usize; 3],
+    /// The position of the last line end that cut a literal. That literal reported it, so
+    /// the interpolations it closes report nothing more.
+    reported_line_end: Option<usize>,
 }
 
 impl<'a> Lexer<'a> {
@@ -631,6 +634,7 @@ impl<'a> Lexer<'a> {
             tokens: Vec::new(),
             open_delimiters: Vec::new(),
             open_counts: [0; 3],
+            reported_line_end: None,
         }
     }
 
@@ -786,7 +790,7 @@ impl<'a> Lexer<'a> {
         let span = self.span_from(start);
 
         if !terminated {
-            self.diagnostics.push(unterminated_character_literal(span));
+            self.report_cut(unterminated_character_literal(span));
             return Token::new(TokenKind::Char(char::REPLACEMENT_CHARACTER), span);
         }
 
@@ -904,8 +908,7 @@ impl<'a> Lexer<'a> {
         }
 
         // The line end, or the end of the file, ends the text.
-        self.diagnostics
-            .push(unterminated_text(self.span_from(text_start)));
+        self.report_cut(unterminated_text(self.span_from(text_start)));
 
         if !piece.is_empty() {
             self.tokens.push(Token::new(
@@ -937,8 +940,7 @@ impl<'a> Lexer<'a> {
         if self.cursor.first() == Some('"') {
             self.cursor.advance();
         } else {
-            self.diagnostics
-                .push(unterminated_raw_text(self.span_from(start)));
+            self.report_cut(unterminated_raw_text(self.span_from(start)));
         }
 
         Token::new(TokenKind::RawText(content), self.span_from(start))
@@ -1203,16 +1205,20 @@ impl<'a> Lexer<'a> {
         unreachable!("the caller checked that an interpolation is open")
     }
 
+    /// Reports a literal cut by the end of its line, and remembers that this line end is
+    /// reported.
+    fn report_cut(&mut self, diagnostic: Diagnostic) {
+        self.diagnostics.push(diagnostic);
+        self.reported_line_end = Some(self.cursor.position());
+    }
+
     /// Closes each interpolation still open, with its text: neither holds a line ending.
     /// Their end tokens are empty, at the line end.
     ///
-    /// Only the innermost text or interpolation cut by the line end reports it.
+    /// The line end is reported once (DIA-3): by the literal it cuts, if any, or else by the
+    /// innermost interpolation.
     fn close_interpolations_at_line_end(&mut self) {
-        // An empty `TextEnd` comes from a text cut by this line end, which reported it.
-        let mut reported = self
-            .tokens
-            .last()
-            .is_some_and(|token| *token.kind() == TokenKind::TextEnd && token.span().is_empty());
+        let mut reported = self.reported_line_end == Some(self.cursor.position());
 
         while self.in_interpolation() {
             let interpolation = self.close_interpolation();
@@ -3529,7 +3535,7 @@ mod tests {
     }
 
     #[test]
-    fn line_end_reports_only_the_innermost_text_or_interpolation() {
+    fn line_end_is_reported_once_by_the_innermost_cut() {
         assert_lexed(
             "\"{f(\"{a\n+",
             &[
@@ -3567,6 +3573,69 @@ mod tests {
                 r#"2:2 Eof """#,
             ],
             &[UnterminatedText(4..7)],
+        );
+        // A raw text or a character literal reports it too.
+        assert_lexed(
+            "\"{r\"a\n+",
+            &[
+                r#"1:1 TextStart "\"""#,
+                r#"1:2 InterpolationStart "{""#,
+                r#"1:3 RawText("a") "r\"a""#,
+                r#"1:6 InterpolationEnd """#,
+                r#"1:6 TextEnd """#,
+                r#"1:6 Newline "\n""#,
+                r#"2:1 Plus "+""#,
+                r#"2:2 Eof """#,
+            ],
+            &[UnterminatedRawText(2..5)],
+        );
+        assert_lexed(
+            "\"{'a\n+",
+            &[
+                r#"1:1 TextStart "\"""#,
+                r#"1:2 InterpolationStart "{""#,
+                r#"1:3 Char('�') "'a""#,
+                r#"1:5 InterpolationEnd """#,
+                r#"1:5 TextEnd """#,
+                r#"1:5 Newline "\n""#,
+                r#"2:1 Plus "+""#,
+                r#"2:2 Eof """#,
+            ],
+            &[UnterminatedCharacterLiteral(2..4)],
+        );
+        // A text closed before the line end is not cut: the interpolation reports it.
+        assert_lexed(
+            "\"{\"a\"\n+",
+            &[
+                r#"1:1 TextStart "\"""#,
+                r#"1:2 InterpolationStart "{""#,
+                r#"1:3 TextStart "\"""#,
+                r#"1:4 TextPiece("a") "a""#,
+                r#"1:5 TextEnd "\"""#,
+                r#"1:6 InterpolationEnd """#,
+                r#"1:6 TextEnd """#,
+                r#"1:6 Newline "\n""#,
+                r#"2:1 Plus "+""#,
+                r#"2:2 Eof """#,
+            ],
+            &[UnterminatedInterpolation(1..5)],
+        );
+        // Each line end counts alone: the cut of the first line does not silence the second.
+        assert_lexed(
+            "\"a\n\"{b",
+            &[
+                r#"1:1 TextStart "\"""#,
+                r#"1:2 TextPiece("a") "a""#,
+                r#"1:3 TextEnd """#,
+                r#"1:3 Newline "\n""#,
+                r#"2:1 TextStart "\"""#,
+                r#"2:2 InterpolationStart "{""#,
+                r#"2:3 Identifier "b""#,
+                r#"2:4 InterpolationEnd """#,
+                r#"2:4 TextEnd """#,
+                r#"2:4 Eof """#,
+            ],
+            &[UnterminatedText(0..2), UnterminatedInterpolation(4..6)],
         );
     }
 
