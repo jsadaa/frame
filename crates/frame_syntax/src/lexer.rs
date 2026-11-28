@@ -835,15 +835,9 @@ impl<'a> Lexer<'a> {
         while let Some(c) = self.cursor.first() {
             match c {
                 '"' => {
+                    self.push_piece(&mut piece, piece_start);
+
                     let start = self.cursor.position();
-
-                    if !piece.is_empty() {
-                        self.tokens.push(Token::new(
-                            TokenKind::TextPiece(std::mem::take(&mut piece)),
-                            self.span_from(piece_start),
-                        ));
-                    }
-
                     self.cursor.advance();
                     self.tokens
                         .push(Token::new(TokenKind::TextEnd, self.span_from(start)));
@@ -851,15 +845,9 @@ impl<'a> Lexer<'a> {
                     return;
                 }
                 '{' => {
+                    self.push_piece(&mut piece, piece_start);
+
                     let start = self.cursor.position();
-
-                    if !piece.is_empty() {
-                        self.tokens.push(Token::new(
-                            TokenKind::TextPiece(std::mem::take(&mut piece)),
-                            self.span_from(piece_start),
-                        ));
-                    }
-
                     self.cursor.advance();
                     self.tokens.push(Token::new(
                         TokenKind::InterpolationStart,
@@ -909,18 +897,22 @@ impl<'a> Lexer<'a> {
 
         // The line end, or the end of the file, ends the text.
         self.report_cut(unterminated_text(self.span_from(text_start)));
-
-        if !piece.is_empty() {
-            self.tokens.push(Token::new(
-                TokenKind::TextPiece(piece),
-                self.span_from(piece_start),
-            ));
-        }
-
+        self.push_piece(&mut piece, piece_start);
         self.tokens.push(Token::new(
             TokenKind::TextEnd,
             self.span_from(self.cursor.position()),
         ));
+    }
+
+    /// Pushes the piece read from `start` to the cursor, and leaves `piece` empty. An empty
+    /// piece gives no token.
+    fn push_piece(&mut self, piece: &mut String, start: usize) {
+        if !piece.is_empty() {
+            self.tokens.push(Token::new(
+                TokenKind::TextPiece(std::mem::take(piece)),
+                self.span_from(start),
+            ));
+        }
     }
 
     /// Reads a raw text, up to its closing `"` on the same line. An unterminated raw text is
