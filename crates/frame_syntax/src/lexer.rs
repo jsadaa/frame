@@ -828,6 +828,9 @@ impl<'a> Lexer<'a> {
         Token::new(TokenKind::Char(value), span)
     }
 
+    /// Reads the characters of a text, after its `"` or after an interpolation, up to its
+    /// closing `"`, its next `{`, or the end of the line. `text_start` is the position of the
+    /// text's `"`: a text cut by the end of the line is reported from there.
     fn read_text(&mut self, text_start: usize) {
         let mut piece = String::new();
         let piece_start = self.cursor.position();
@@ -1276,6 +1279,11 @@ impl Lexed {
 /// - A raw text, `r` right before `"`, runs to the next `"` of the line, and keeps each
 ///   character as written. Without that `"`, it gets a diagnostic, and holds the rest of
 ///   the line.
+/// - A text, from `"` to the next `"` of the line, gives `TextStart`, its pieces and its
+///   interpolations, then `TextEnd`. A piece holds its characters with their escapes read.
+///   An interpolation, from `{` to its `}`, is read as code, where `//` is two `/`; its
+///   first `:` outside any `(`, `[` or `{` of that code starts its format. A text or an
+///   interpolation not closed on its line gets a diagnostic, and ends at the end of the line.
 /// - Operators and punctuation are read as the longest token that matches: `<<=` is one
 ///   token, not `<<` then `=`.
 /// - Any other character gets a diagnostic, and reading goes on after it.
