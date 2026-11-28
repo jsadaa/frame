@@ -267,26 +267,19 @@ pub enum TokenKind {
     Eof,
 }
 
-/// A delimiter that waits for its closing token.
+/// What waits for its closing token: a delimiter of code, or an interpolation.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum Open {
-    Paren,
-    Bracket,
-    Brace,
+    Delimiter(Delimiter),
     Interpolation(Interpolation),
 }
 
-impl Open {
-    /// Returns the delimiter's index in `Lexer::open_counts`, or `None` for an interpolation,
-    /// which is not counted.
-    fn index(&self) -> Option<usize> {
-        match self {
-            Open::Paren => Some(0),
-            Open::Bracket => Some(1),
-            Open::Brace => Some(2),
-            Open::Interpolation(_) => None,
-        }
-    }
+/// A delimiter of code. As a `usize`, it indexes `Lexer::open_counts`.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum Delimiter {
+    Paren,
+    Bracket,
+    Brace,
 }
 
 /// An interpolation not closed yet.
@@ -619,7 +612,7 @@ struct Lexer<'a> {
     /// The delimiters not closed yet, innermost last.
     open_delimiters: Vec<Open>,
     /// How many delimiters of each kind `open_delimiters` holds above the innermost
-    /// interpolation, indexed by `Open::index`.
+    /// interpolation, indexed by `Delimiter as usize`.
     open_counts: [usize; 3],
 }
 
@@ -1116,7 +1109,7 @@ impl<'a> Lexer<'a> {
     fn keeps_newline(&self) -> bool {
         let inside_parens_or_brackets = matches!(
             self.open_delimiters.last(),
-            Some(Open::Paren | Open::Bracket)
+            Some(Open::Delimiter(Delimiter::Paren | Delimiter::Bracket))
         );
         let after_newline = matches!(
             self.tokens.last().map(Token::kind),
@@ -1129,26 +1122,24 @@ impl<'a> Lexer<'a> {
     /// Updates the open delimiters after a token of kind `kind`.
     fn track_delimiter(&mut self, kind: &TokenKind) {
         match kind {
-            TokenKind::OpenParen => self.open(Open::Paren),
-            TokenKind::OpenBracket => self.open(Open::Bracket),
-            TokenKind::OpenBrace => self.open(Open::Brace),
-            TokenKind::CloseParen => self.close(Open::Paren),
-            TokenKind::CloseBracket => self.close(Open::Bracket),
-            TokenKind::CloseBrace => self.close(Open::Brace),
+            TokenKind::OpenParen => self.open(Delimiter::Paren),
+            TokenKind::OpenBracket => self.open(Delimiter::Bracket),
+            TokenKind::OpenBrace => self.open(Delimiter::Brace),
+            TokenKind::CloseParen => self.close(Delimiter::Paren),
+            TokenKind::CloseBracket => self.close(Delimiter::Bracket),
+            TokenKind::CloseBrace => self.close(Delimiter::Brace),
             _ => {}
         }
     }
 
-    fn open(&mut self, delimiter: Open) {
-        if let Some(i) = delimiter.index() {
-            self.open_delimiters.push(delimiter);
-            self.open_counts[i] += 1;
-        }
+    fn open(&mut self, delimiter: Delimiter) {
+        self.open_delimiters.push(Open::Delimiter(delimiter));
+        self.open_counts[delimiter as usize] += 1;
     }
 
     /// Returns how many `delimiter` are open above the innermost interpolation.
-    fn open_count(&self, delimiter: Open) -> usize {
-        delimiter.index().map_or(0, |i| self.open_counts[i])
+    fn open_count(&self, delimiter: Delimiter) -> usize {
+        self.open_counts[delimiter as usize]
     }
 
     /// Closes `delimiter`, and any delimiter left open inside it.
@@ -1156,17 +1147,19 @@ impl<'a> Lexer<'a> {
     /// Without an open `delimiter`, nothing changes: a missing `)` does not turn every later
     /// line ending into a space. The counts tell it at once; a search through the stack would
     /// make `((((…]]]]` quadratic.
-    fn close(&mut self, delimiter: Open) {
+    fn close(&mut self, delimiter: Delimiter) {
         if self.open_count(delimiter) == 0 {
             return;
         }
 
         while let Some(open) = self.open_delimiters.pop() {
-            if let Some(i) = open.index() {
-                self.open_counts[i] -= 1;
-                if open == delimiter {
-                    break;
-                }
+            let Open::Delimiter(open) = open else {
+                unreachable!("the counts only see the delimiters above the innermost interpolation")
+            };
+
+            self.open_counts[open as usize] -= 1;
+            if open == delimiter {
+                break;
             }
         }
     }
@@ -1181,7 +1174,7 @@ impl<'a> Lexer<'a> {
     /// Returns whether a `}` read now closes an interpolation: one is open, and no `{` is left
     /// open inside it.
     fn closes_interpolation(&self) -> bool {
-        self.in_interpolation() && self.open_count(Open::Brace) == 0
+        self.in_interpolation() && self.open_count(Delimiter::Brace) == 0
     }
 
     fn open_interpolation(&mut self, text_start: usize, brace_start: usize) {
