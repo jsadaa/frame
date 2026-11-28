@@ -3035,7 +3035,7 @@ mod tests {
     }
 
     #[test]
-    fn text_with_an_interpolation_and_a_format() {
+    fn interpolation_and_its_format_give_their_tokens() {
         assert_lexed(
             r#""a\t{b:>8}""#,
             &[
@@ -3064,7 +3064,11 @@ mod tests {
             ],
             &[],
         );
-        // A refused escape gives U+FFFD, and the text goes on.
+    }
+
+    #[test]
+    fn refused_escape_in_a_text_gives_u_fffd() {
+        // The text goes on after it.
         assert_lexed(
             r#""a\qb""#,
             &[
@@ -3314,7 +3318,10 @@ mod tests {
             ],
             &[],
         );
-        // After the text, `//` opens a comment again.
+    }
+
+    #[test]
+    fn two_slashes_after_a_text_open_a_comment() {
         assert_lexed(
             r#""{a}" // b"#,
             &[
@@ -3434,7 +3441,11 @@ mod tests {
                 &[EmptyInterpolation(1..4)],
             );
         }
-        // Only spaces and tabs count: a no-break space is an unexpected character.
+    }
+
+    #[test]
+    fn only_spaces_and_tabs_make_an_interpolation_empty() {
+        // A no-break space is an unexpected character.
         assert_lexed(
             "\"{\u{a0}}\"",
             &[
@@ -3614,7 +3625,11 @@ mod tests {
         let file = source_map.add(String::from("test.fm"), text);
         let lexed = tokenize(&source_map, file);
 
-        assert!(lexed.diagnostics().is_empty());
+        assert!(
+            lexed.diagnostics().is_empty(),
+            "diagnostics: {:?}",
+            lexed.diagnostics()
+        );
         // Per level: `TextStart`, `InterpolationStart`, `InterpolationEnd`, `TextEnd`. Then
         // `x` and `Eof`.
         assert_eq!(lexed.tokens().len(), 4 * depth + 2);
