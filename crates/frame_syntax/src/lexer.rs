@@ -17,8 +17,8 @@ const RAW_TEXT: RuleCode = RuleCode::new(Prefix::Lex, 19);
 const TEXT_LITERAL: RuleCode = RuleCode::new(Prefix::Lex, 17);
 const INTERPOLATION: RuleCode = RuleCode::new(Prefix::Lex, 20);
 
-// Kept for future versions. None has a use yet, so each one is a name, and the lexer can
-// refuse it without knowing what the word declares.
+// Reserved for later versions. None of them means anything yet, so the lexer can reject
+// them on its own, without knowing what they'll declare.
 const RESERVED_WORDS: [&str; 8] = [
     "realize", "flow", "under", "unsafe", "extern", "comptime", "yield", "export",
 ];
@@ -126,11 +126,11 @@ impl Token {
     }
 }
 
-/// The kind of a token.
+/// A token's kind.
 ///
 /// Operators and punctuation are named by their shape, since only the parser knows what they
 /// mean: `|` is `Pipe`, not `Or`.
-// Not `Copy`: some kinds carry a value, such as a doc comment's text.
+// Not `Copy`: some kinds own a `String`.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum TokenKind {
     /// `+`
@@ -221,60 +221,64 @@ pub enum TokenKind {
     Question,
     /// `!`
     Bang,
-    /// A doc comment, `///`, alone on its line.
+    /// A `///` doc comment, alone on its line.
     ///
-    /// It holds the comment's text, after `///` and one optional space.
+    /// The text leaves out the `///` and at most one space after it.
     DocComment(String),
     /// A keyword, such as `let`.
     Keyword(Keyword),
     /// An identifier, such as `total`. Its name is the token's text.
     Identifier,
-    /// An integer literal, such as `0xFF`. It holds the value, or `None` if the value does not
+    /// An integer literal, such as `0xFF`, with its value, or `None` if the value does not
     /// fit in a `u64`.
     Int(Option<u64>),
-    /// A float literal, such as `2.5e-3`. It holds the text without `_`, ready for `parse`.
+    /// A float literal, such as `2.5e-3`, with its text minus any `_`, ready for `parse`.
     Float(String),
-    /// A character literal, such as `'a'` or `'\n'`. It holds the value, or U+FFFD if the
-    /// literal is refused.
+    /// A character literal, such as `'a'` or `'\n'`, with its value, or U+FFFD if the literal
+    /// is invalid.
     Char(char),
-    /// A raw text, such as `r"C:\Users"`. It holds the characters between the quotes, as
-    /// written; without the closing quote, those up to the end of the line.
+    /// A raw text, such as `r"C:\Users"`, with the characters between its quotes as written.
+    /// If the closing quote is missing, it runs to the end of the line.
     RawText(String),
     /// The `"` that opens a text.
     ///
-    /// A text gives this token, then its pieces and interpolations, then `TextEnd`.
+    /// A text produces this token, then its pieces and interpolations, then `TextEnd`.
     TextStart,
-    /// Characters of a text, between its quotes and its interpolations. It holds them with
-    /// their escapes read: `\t` gives a tab, and a refused escape gives U+FFFD. It is never
-    /// empty.
+    /// A run of a text's characters, between its quotes and its interpolations.
+    ///
+    /// Escapes are already decoded: `\t` is a tab, and an invalid escape becomes U+FFFD. A
+    /// piece is never empty.
     TextPiece(String),
-    /// The `"` that closes a text. Without it, the text ends at the end of the line, and the
-    /// span is empty.
+    /// The `"` that closes a text. If it is missing, the text ends with the line, and this
+    /// token's span is empty.
     TextEnd,
     /// The `{` that opens an interpolation in a text.
     InterpolationStart,
-    /// The `}` that closes an interpolation. Without it, the interpolation ends at the end of
-    /// the line, and the span is empty.
+    /// The `}` that closes an interpolation. If it is missing, the interpolation ends with
+    /// the line, and this token's span is empty.
     InterpolationEnd,
-    /// The format of an interpolation, such as `:>8` in `"{cents:>8}"`. It covers the `:`, and
-    /// holds what follows it as written, up to the `}`.
+    /// An interpolation's format, such as `:>8` in `"{cents:>8}"`. The span covers the `:`,
+    /// and the text is what follows it as written, up to the `}`.
     Format(String),
-    /// `_` alone, the wildcard of patterns. `_x` is an identifier.
+    /// `_` alone, the pattern wildcard. `_x` is an identifier.
     Underscore,
     /// A line ending: `\n` or `\r\n`.
+    ///
+    /// There is none inside `(` or `[`, and none right after another `Newline`: blank lines
+    /// collapse into one token.
     Newline,
     /// The end of the text. Its span is empty.
     Eof,
 }
 
-/// What waits for its closing token: a delimiter of code, or an interpolation.
+/// Something still waiting for its closer: a delimiter, or an interpolation.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum Open {
     Delimiter(Delimiter),
     Interpolation(Interpolation),
 }
 
-/// A delimiter of code. As a `usize`, it indexes `Lexer::open_counts`.
+/// `(`, `[` or `{` in code. As a `usize`, it indexes `Lexer::open_counts`.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum Delimiter {
     Paren,
@@ -282,20 +286,20 @@ enum Delimiter {
     Brace,
 }
 
-/// An interpolation not closed yet.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 struct Interpolation {
-    /// Where its text starts, at the `"`.
+    /// Offset of the enclosing text's `"`.
     text_start: usize,
-    /// Where it starts, at the `{`.
+    /// Offset of the interpolation's `{`.
     brace_start: usize,
-    /// The counts of the delimiters open outside it, put back when it closes.
+    /// The delimiter counts from outside, restored when the interpolation closes.
     outer_counts: [usize; 3],
 }
 
 /// A keyword.
 ///
-/// Case counts: `self` and `Self` are two keywords, and `Fn` is an identifier.
+/// Keywords are case-sensitive: `self` and `Self` are two different keywords, and `Fn` is an
+/// identifier.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Keyword {
     /// `fn`
@@ -370,7 +374,7 @@ pub enum Keyword {
     Where,
     /// `any`
     Any,
-    // A variant cannot be named `Self`, a Rust keyword: the two take rustc's names.
+    // `Self` is a Rust keyword, so it can't name a variant. Both take rustc's names.
     /// `Self`
     SelfUpper,
     /// `self`
@@ -396,7 +400,6 @@ pub enum Keyword {
 }
 
 impl Keyword {
-    /// Returns the keyword written `text`, if there is one.
     fn from_text(text: &str) -> Option<Self> {
         match text {
             "fn" => Some(Keyword::Fn),
@@ -504,7 +507,8 @@ impl Keyword {
     }
 }
 
-// Longest first: `find` stops at the first match, which must be the longest (LEX-7).
+// Longest first: `read_operator` takes the first match, so `<<=` must come before `<<` and
+// `<`.
 const OPERATORS: [(&str, TokenKind); 44] = [
     ("<<=", TokenKind::ShlEq),
     (">>=", TokenKind::ShrEq),
@@ -552,9 +556,9 @@ const OPERATORS: [(&str, TokenKind); 44] = [
     ("!", TokenKind::Bang),
 ];
 
-/// Reads a text one character at a time.
+/// Walks a text one `char` at a time.
 ///
-/// It moves through a `Chars`, so a position can never fall inside a multibyte character.
+/// Going through `Chars` means a position can never land inside a multibyte character.
 struct Cursor<'a> {
     chars: Chars<'a>,
     text_len: usize,
@@ -566,7 +570,7 @@ impl<'a> Cursor<'a> {
     }
 
     fn second(&self) -> Option<char> {
-        // Two `next` calls optimize better than `nth(1)`, as in rustc_lexer's cursor.
+        // Two `next()` calls optimize better than `nth(1)`. rustc_lexer's cursor does the same.
         let mut iter = self.chars.clone();
         iter.next();
         iter.next()
@@ -585,15 +589,13 @@ impl<'a> Cursor<'a> {
         self.text_len - self.chars.as_str().len()
     }
 
-    /// Moves past the characters for which `predicate` holds.
     fn eat_while(&mut self, predicate: impl Fn(char) -> bool) {
         while self.first().is_some_and(&predicate) {
             self.advance();
         }
     }
 
-    /// Returns whether the cursor is at the end of its line: on `\n`, on `\r\n`, or at the
-    /// end of the text.
+    /// `true` on `\n`, on `\r\n` and at the end of the text. A lone `\r` doesn't end a line.
     fn at_line_end(&self) -> bool {
         match self.first() {
             None | Some('\n') => true,
@@ -609,13 +611,13 @@ struct Lexer<'a> {
     cursor: Cursor<'a>,
     diagnostics: Vec<Diagnostic>,
     tokens: Vec<Token>,
-    /// The delimiters not closed yet, innermost last.
+    /// Everything still open, innermost last.
     open_delimiters: Vec<Open>,
-    /// How many delimiters of each kind `open_delimiters` holds above the innermost
-    /// interpolation, indexed by `Delimiter as usize`.
+    /// How many delimiters of each kind are open above the innermost interpolation, indexed
+    /// by `Delimiter as usize`.
     open_counts: [usize; 3],
-    /// The position of the last line end that cut a literal. That literal reported it, so
-    /// the interpolations it closes report nothing more.
+    /// The last line end that cut a literal short. The literal already reported it, so the
+    /// interpolations it closes stay quiet.
     reported_line_end: Option<usize>,
 }
 
@@ -656,11 +658,11 @@ impl<'a> Lexer<'a> {
                             self.tokens.push(token);
                         }
                     } else {
-                        // TODO(J02): refuse a lone `\r` as a forbidden character (LEX-2).
+                        // TODO(J02): reject a lone `\r` as a forbidden character (LEX-2).
                         self.skip_unexpected(c);
                     }
                 }
-                // In an interpolation, `//` is two `/` (LEX-5).
+                // Inside an interpolation, `//` is two slashes, not a comment (LEX-5).
                 '/' if self.cursor.second() == Some('/') && !self.in_interpolation() => {
                     if let Some(token) = self.read_comment() {
                         self.tokens.push(token);
@@ -679,17 +681,17 @@ impl<'a> Lexer<'a> {
                     self.read_text(start);
                 }
                 '}' if self.closes_interpolation() => self.read_interpolation_end(),
-                // At depth zero: no delimiter is open in the innermost interpolation (LEX-20).
+                // Only at depth zero: a `:` inside a `(`, `[` or `{` belongs to the code (LEX-20).
                 ':' if matches!(self.open_delimiters.last(), Some(Open::Interpolation(_))) => {
                     let token = self.read_format();
                     self.tokens.push(token);
                 }
-                // Before words: they would read `r` as an identifier.
+                // Must come before the word arm, which would take the `r` as an identifier.
                 'r' if self.cursor.second() == Some('"') => {
                     let token = self.read_raw_text();
                     self.tokens.push(token);
                 }
-                // ASCII only: `is_alphabetic` would also take `é` (LEX-8).
+                // ASCII only: `is_alphabetic()` would also accept `é` (LEX-8).
                 c if c.is_ascii_alphabetic() || c == '_' => {
                     let token = self.read_word();
                     self.tokens.push(token);
@@ -708,14 +710,15 @@ impl<'a> Lexer<'a> {
                 }
             }
 
-            // An arm that does not move the cursor would loop forever, and hang the tests.
+            // Every arm must consume something. Otherwise we loop forever, and the tests hang
+            // instead of failing.
             debug_assert!(
                 self.cursor.position() > before,
                 "the lexer did not move at byte {before}"
             );
         }
 
-        // The end of the file is also a line end.
+        // The end of the file ends the last line too.
         self.close_interpolations_at_line_end();
 
         self.tokens.push(Token::new(
@@ -729,8 +732,8 @@ impl<'a> Lexer<'a> {
         }
     }
 
-    /// Reads a character literal, then checks it. A refused literal is reported, then read as
-    /// U+FFFD.
+    /// Invalid literals are reported but still produce a `Char`, holding U+FFFD, so the
+    /// parser can keep going.
     fn read_char(&mut self) -> Token {
         let start = self.cursor.position();
         self.cursor.advance();
@@ -766,7 +769,7 @@ impl<'a> Lexer<'a> {
             return Token::new(TokenKind::Char(char::REPLACEMENT_CHARACTER), span);
         }
 
-        // Each quote is one byte.
+        // Strip the quotes, one byte each.
         let content = &self.text[start + 1..self.cursor.position() - 1];
 
         let (value, len) = match content.chars().next() {
@@ -777,7 +780,7 @@ impl<'a> Lexer<'a> {
             Some('\\') => match escape::read(content) {
                 Ok(read) => read,
                 Err(error) => {
-                    // The escape starts after the opening quote.
+                    // The escape starts right after the opening quote.
                     self.diagnostics
                         .push(error.to_diagnostic(content, self.file, start + 1));
                     return Token::new(TokenKind::Char(char::REPLACEMENT_CHARACTER), span);
@@ -797,9 +800,11 @@ impl<'a> Lexer<'a> {
         Token::new(TokenKind::Char(value), span)
     }
 
-    /// Reads the characters of a text, after its `"` or after an interpolation, up to its
-    /// closing `"`, its next `{`, or the end of the line. `text_start` is the position of the
-    /// text's `"`: a text cut by the end of the line is reported from there.
+    /// Reads a text from the cursor, which sits after its `"` or after an interpolation, up
+    /// to the closing `"`, the next `{` or the end of the line.
+    ///
+    /// `text_start` is the offset of the text's `"`. If the line ends first, the error points
+    /// from there.
     fn read_text(&mut self, text_start: usize) {
         let mut piece = String::new();
         let piece_start = self.cursor.position();
@@ -851,7 +856,7 @@ impl<'a> Lexer<'a> {
                     }
                 }
                 _ if self.cursor.at_line_end() => break,
-                // Reported, but kept in the piece.
+                // A stray `}`: report it, but keep it in the piece.
                 '}' => {
                     let start = self.cursor.position();
                     self.cursor.advance();
@@ -867,7 +872,7 @@ impl<'a> Lexer<'a> {
             }
         }
 
-        // The line end, or the end of the file, ends the text.
+        // We hit the end of the line, or of the file, before the closing `"`.
         self.report_cut(unterminated_text(self.span_from(text_start)));
         self.push_piece(&mut piece, piece_start);
         self.tokens.push(Token::new(
@@ -876,8 +881,8 @@ impl<'a> Lexer<'a> {
         ));
     }
 
-    /// Pushes the piece read from `start` to the cursor, and leaves `piece` empty. An empty
-    /// piece gives no token.
+    /// Turns `piece` into a token spanning `start` to the cursor, and empties it. Empty
+    /// pieces produce no token.
     fn push_piece(&mut self, piece: &mut String, start: usize) {
         if !piece.is_empty() {
             self.tokens.push(Token::new(
@@ -887,14 +892,15 @@ impl<'a> Lexer<'a> {
         }
     }
 
-    /// Reads the `}` that closes the innermost interpolation, then the rest of its text. An
-    /// empty interpolation is reported.
+    /// Reads the `}` that closes the innermost interpolation, then carries on with the rest
+    /// of the text.
     fn read_interpolation_end(&mut self) {
         let start = self.cursor.position();
         let interpolation = self.close_interpolation();
         self.cursor.advance();
 
-        // `{` is one byte. Not `trim`, which also takes Unicode spaces (C.32).
+        // Don't use `trim()` here: it would also strip Unicode spaces, and only ' ' and '\t'
+        // are blanks.
         let inside = &self.text[interpolation.brace_start + 1..start];
         if inside.chars().all(|c| matches!(c, ' ' | '\t')) {
             self.diagnostics.push(empty_interpolation(
@@ -910,8 +916,7 @@ impl<'a> Lexer<'a> {
         self.read_text(interpolation.text_start);
     }
 
-    /// Reads the format of an interpolation, from its `:` to its `}` or to the end of the
-    /// line. It holds what follows the `:`, as written.
+    /// Reads an interpolation's format, from the `:` up to the `}` or the end of the line.
     fn read_format(&mut self) -> Token {
         let start = self.cursor.position();
 
@@ -919,7 +924,6 @@ impl<'a> Lexer<'a> {
             self.cursor.advance();
         }
 
-        // `:` is one byte.
         let content = &self.text[start + 1..self.cursor.position()];
         Token::new(
             TokenKind::Format(content.to_string()),
@@ -927,8 +931,8 @@ impl<'a> Lexer<'a> {
         )
     }
 
-    /// Reads a raw text, up to its closing `"` on the same line. An unterminated raw text is
-    /// reported, then read with what it holds up to the end of the line.
+    /// Reads a raw text, up to its closing `"` on the same line. If there's none, reports it
+    /// and keeps the rest of the line.
     fn read_raw_text(&mut self) -> Token {
         let start = self.cursor.position();
         self.cursor.advance();
@@ -938,7 +942,6 @@ impl<'a> Lexer<'a> {
             self.cursor.advance();
         }
 
-        // `r` and `"` are one byte each.
         let content = self.text[start + 2..self.cursor.position()].to_string();
 
         if self.cursor.first() == Some('"') {
@@ -950,12 +953,12 @@ impl<'a> Lexer<'a> {
         Token::new(TokenKind::RawText(content), self.span_from(start))
     }
 
-    /// Reads a word of ASCII letters, digits and `_`, then tells what it is: `_` alone, a
-    /// keyword or an identifier. A reserved word is reported, then read as an identifier.
+    /// Reads a whole word, then works out what it is: `_`, a keyword or an identifier.
+    /// Reserved words are reported and come out as identifiers.
     fn read_word(&mut self) -> Token {
         let start = self.cursor.position();
 
-        // The whole word first: deciding earlier would cut `letter` into `let` and `ter`.
+        // Read the whole word before deciding, or `letter` would come out as `let` + `ter`.
         self.cursor
             .eat_while(|c| c.is_ascii_alphanumeric() || c == '_');
 
@@ -964,7 +967,7 @@ impl<'a> Lexer<'a> {
 
         let kind = match text {
             "_" => TokenKind::Underscore,
-            // Read as an identifier, so that the parser does not report it a second time.
+            // Produce an identifier, so the parser doesn't report the same word again.
             _ if RESERVED_WORDS.contains(&text) => {
                 self.diagnostics.push(reserved_word(text, span));
                 TokenKind::Identifier
@@ -975,8 +978,7 @@ impl<'a> Lexer<'a> {
         Token::new(kind, span)
     }
 
-    /// Reads a number literal, then checks it. A refused literal is reported, then read with a
-    /// placeholder value.
+    /// Invalid literals are reported and produce a placeholder token of the right kind.
     fn read_number(&mut self) -> Token {
         let start = self.cursor.position();
         // Only a decimal literal has an exponent, so in `0x1e+5` and `0b1e+1` the `+` ends
@@ -1021,7 +1023,7 @@ impl<'a> Lexer<'a> {
         Token::new(kind, self.span_from(start))
     }
 
-    /// Reads a line ending, `\n` or `\r\n`, if one starts here.
+    /// Returns `None` on a lone `\r`, which isn't a line ending.
     fn read_newline(&mut self) -> Option<Token> {
         let start = self.cursor.position();
 
@@ -1039,7 +1041,6 @@ impl<'a> Lexer<'a> {
         }
     }
 
-    /// Reads the longest operator or punctuation token that starts here.
     fn read_operator(&mut self) -> Option<Token> {
         OPERATORS
             .iter()
@@ -1055,14 +1056,13 @@ impl<'a> Lexer<'a> {
             })
     }
 
-    /// Reads a comment, from `//` to the end of the line.
-    ///
-    /// Only a doc comment alone on its line gives a token. Any other doc comment is reported.
+    /// Only a doc comment alone on its line produces a token. A `///` after code is reported.
     fn read_comment(&mut self) -> Option<Token> {
         let start = self.cursor.position();
 
         self.cursor.advance();
         self.cursor.advance();
+        // `////` is a plain comment, as in Rust.
         let is_doc = self.cursor.first() == Some('/') && self.cursor.second() != Some('/');
         self.skip_until_newline();
 
@@ -1086,14 +1086,12 @@ impl<'a> Lexer<'a> {
         Some(Token::new(TokenKind::DocComment(text.to_string()), span))
     }
 
-    /// Skips the rest of the line, up to its line ending.
     fn skip_until_newline(&mut self) {
         while !self.cursor.at_line_end() {
             self.cursor.advance();
         }
     }
 
-    /// Skips `c`, which starts no token, and reports it.
     fn skip_unexpected(&mut self, c: char) {
         let start = self.cursor.position();
         self.cursor.advance();
@@ -1101,7 +1099,6 @@ impl<'a> Lexer<'a> {
             .push(unexpected_character(c, self.span_from(start)));
     }
 
-    /// Returns the span from `start` to the cursor.
     fn span_from(&self, start: usize) -> Span {
         Span::new(
             self.file,
@@ -1110,8 +1107,7 @@ impl<'a> Lexer<'a> {
         )
     }
 
-    /// Returns whether a newline read now gives a token: not inside `(` or `[`, and not right
-    /// after another newline.
+    /// `false` inside `(` or `[`, and right after another `Newline`.
     fn keeps_newline(&self) -> bool {
         let inside_parens_or_brackets = matches!(
             self.open_delimiters.last(),
@@ -1125,7 +1121,6 @@ impl<'a> Lexer<'a> {
         !inside_parens_or_brackets && !after_newline
     }
 
-    /// Updates the open delimiters after a token of kind `kind`.
     fn track_delimiter(&mut self, kind: &TokenKind) {
         match kind {
             TokenKind::OpenParen => self.open(Delimiter::Paren),
@@ -1143,16 +1138,16 @@ impl<'a> Lexer<'a> {
         self.open_counts[delimiter as usize] += 1;
     }
 
-    /// Returns how many `delimiter` are open above the innermost interpolation.
+    /// Counts only what's open above the innermost interpolation.
     fn open_count(&self, delimiter: Delimiter) -> usize {
         self.open_counts[delimiter as usize]
     }
 
-    /// Closes `delimiter`, and any delimiter left open inside it.
+    /// Closes `delimiter` and anything still open inside it. Otherwise a missing `)` would
+    /// swallow every line ending up to the end of the file.
     ///
-    /// Without an open `delimiter`, nothing changes: a missing `)` does not turn every later
-    /// line ending into a space. The counts tell it at once; a search through the stack would
-    /// make `((((…]]]]` quadratic.
+    /// A closer with nothing to close is ignored. We check the counts first: searching the
+    /// stack instead would make `((((…]]]]` quadratic.
     fn close(&mut self, delimiter: Delimiter) {
         if self.open_count(delimiter) == 0 {
             return;
@@ -1170,22 +1165,20 @@ impl<'a> Lexer<'a> {
         }
     }
 
-    /// Returns whether an interpolation is open.
     fn in_interpolation(&self) -> bool {
-        // Every counted delimiter lies above the innermost interpolation, so the stack holds
-        // more than the counts only when an interpolation is open.
+        // The counts only cover what's above the innermost interpolation. So if the stack
+        // holds more than the counts, there's an interpolation in there.
         self.open_delimiters.len() > self.open_counts.iter().sum::<usize>()
     }
 
-    /// Returns whether a `}` read now closes an interpolation: one is open, and no `{` is left
-    /// open inside it.
+    /// A `}` closes an interpolation only if no `{` is open inside it.
     fn closes_interpolation(&self) -> bool {
         self.in_interpolation() && self.open_count(Delimiter::Brace) == 0
     }
 
     fn open_interpolation(&mut self, text_start: usize, brace_start: usize) {
-        // A delimiter inside the interpolation cannot close one outside it. So the counts
-        // start again from zero, and the outer ones come back when it closes.
+        // Delimiters inside the interpolation can't close the ones outside it, so we start
+        // the counts from zero and restore the outer ones when it closes.
         let outer_counts = std::mem::take(&mut self.open_counts);
 
         self.open_delimiters
@@ -1196,8 +1189,7 @@ impl<'a> Lexer<'a> {
             }));
     }
 
-    /// Closes the innermost interpolation, and any delimiter left open inside it, then
-    /// returns it.
+    /// Pops the innermost interpolation, along with anything still open inside it.
     fn close_interpolation(&mut self) -> Interpolation {
         while let Some(open) = self.open_delimiters.pop() {
             if let Open::Interpolation(interpolation) = open {
@@ -1209,18 +1201,17 @@ impl<'a> Lexer<'a> {
         unreachable!("the caller checked that an interpolation is open")
     }
 
-    /// Reports a literal cut by the end of its line, and remembers that this line end is
-    /// reported.
+    /// Reports a literal cut short by its line end, and records that line end as reported.
     fn report_cut(&mut self, diagnostic: Diagnostic) {
         self.diagnostics.push(diagnostic);
         self.reported_line_end = Some(self.cursor.position());
     }
 
-    /// Closes each interpolation still open, with its text: neither holds a line ending.
-    /// Their end tokens are empty, at the line end.
+    /// Closes every open interpolation and its text, since neither can span a line ending.
+    /// The end tokens are empty, at the line end.
     ///
-    /// The line end is reported once (DIA-3): by the literal it cuts, if any, or else by the
-    /// innermost interpolation.
+    /// The line end gets one diagnostic, not one per level (DIA-3): from the literal it cut,
+    /// if any, or else from the innermost interpolation.
     fn close_interpolations_at_line_end(&mut self) {
         let mut reported = self.reported_line_end == Some(self.cursor.position());
 
@@ -1242,7 +1233,7 @@ impl<'a> Lexer<'a> {
     }
 }
 
-/// The tokens of a file, and the diagnostics found while reading it.
+/// A file's tokens, and the diagnostics found while lexing it.
 #[derive(Debug)]
 pub struct Lexed {
     tokens: Vec<Token>,
@@ -1250,7 +1241,7 @@ pub struct Lexed {
 }
 
 impl Lexed {
-    /// Returns the tokens in text order. The last one marks the end of the file.
+    /// Returns the tokens in text order. The last one is always `Eof`.
     pub fn tokens(&self) -> &[Token] {
         &self.tokens
     }
@@ -1263,35 +1254,8 @@ impl Lexed {
 
 /// Splits `file`'s text into tokens.
 ///
-/// - Spaces and tabs only separate tokens.
-/// - A line ending, `\n` or `\r\n`, gives a newline token, unless the innermost open
-///   delimiter is `(` or `[`. Consecutive newline tokens merge into the first.
-/// - A comment runs from `//` to the end of the line, and gives no token.
-/// - A doc comment, `///`, gives a token if it is alone on its line, and a diagnostic
-///   otherwise.
-/// - A word of ASCII letters, digits and `_`, not starting with a digit, is read whole: `let`
-///   is a keyword, and `letter` an identifier. `_` alone is the wildcard. A reserved word,
-///   such as `yield`, gets a diagnostic, then gives an identifier.
-/// - A number literal starts with a digit, and runs over the ASCII letters, digits and `_`
-///   that follow. It goes past a `.`, or past a sign after the `e` of a decimal literal,
-///   only before a digit: `1..10` gives `1`, `..` and `10`. A refused literal gets a
-///   diagnostic, then gives a token of its kind.
-/// - A character literal runs from `'` to the next `'` of the line that no `\` escapes, or
-///   to the end of the line. It holds one character, written as it is or as an escape:
-///   `'a'`, `'\n'`, `'\u{1F600}'`. A refused literal gets a diagnostic, then gives U+FFFD.
-/// - A raw text, `r` right before `"`, runs to the next `"` of the line, and keeps each
-///   character as written. Without that `"`, it gets a diagnostic, and holds the rest of
-///   the line.
-/// - A text, from `"` to the next `"` of the line, gives `TextStart`, its pieces and its
-///   interpolations, then `TextEnd`. A piece holds its characters with their escapes read.
-///   An interpolation, from `{` to its `}`, is read as code, where `//` is two `/`; its
-///   first `:` outside any `(`, `[` or `{` of that code starts its format. A text or an
-///   interpolation not closed on its line gets a diagnostic, and ends at the end of the line.
-/// - Operators and punctuation are read as the longest token that matches: `<<=` is one
-///   token, not `<<` then `=`.
-/// - Any other character gets a diagnostic, and reading goes on after it.
-///
-/// The last token marks the end of the file, with an empty span.
+/// Lexing never stops at an error: it reports it and moves on. An invalid literal still
+/// produces a token of its kind, with a placeholder value. The last token is always `Eof`.
 ///
 /// # Panics
 ///
@@ -1303,8 +1267,8 @@ pub fn tokenize(source_map: &SourceMap, file: FileId) -> Lexed {
 
 /// Writes tokens as text, one per line.
 ///
-/// A line gives the token's start as `line:column`, then its kind, with its value if it has
-/// one, and its text, both written by `Debug`:
+/// Each line holds the token's start as `line:column`, then its kind and its text, both in
+/// `Debug` form:
 ///
 /// ```text
 /// 1:1 DocComment("Sums.") "/// Sums."
@@ -1331,15 +1295,15 @@ pub fn dump_tokens(tokens: &[Token], file: &SourceFile) -> String {
     dump
 }
 
-/// Writes the content of a character literal as the content of a text. A text gives a
-/// meaning to `"`, `{` and `}`, so each one gets a `\`, unless it is part of an escape.
+/// Rewrites a character literal's content for use inside a text. `"`, `{` and `}` mean
+/// something in a text, so they get a `\`, unless they're part of an escape.
 fn escape_for_text(content: &str) -> String {
     let mut text = String::with_capacity(content.len());
     let mut rest = content;
 
     while let Some(c) = rest.chars().next() {
         let len = match c {
-            // Copied as written, refused or not: `{` is part of `\u{41}`.
+            // Escapes are copied as written, valid or not: the `{` of `\u{41}` stays as is.
             '\\' => escape::read(rest).map_or_else(|error| error.len(), |(_, len)| len),
             '"' | '{' | '}' => {
                 text.push('\\');
