@@ -1348,10 +1348,11 @@ mod tests {
     use std::ops::Range;
 
     use ExpectedDiagnostic::{
-        AfterExponent, DocCommentNotAlone, EmptyCharacterLiteral, FloatNotDecimal, InvalidDigit,
-        LeadingZero, MalformedUnicodeEscape, MisplacedUnderscore, MissingDigits,
-        MoreThanOneCharacter, NotScalarValue, NumberSuffix, ReservedWord, UnexpectedCharacter,
-        UnknownEscape, UnterminatedCharacterLiteral, UnterminatedRawText, UppercasePrefix,
+        AfterExponent, DocCommentNotAlone, EmptyCharacterLiteral, EmptyInterpolation,
+        FloatNotDecimal, InvalidDigit, LeadingZero, MalformedUnicodeEscape, MisplacedUnderscore,
+        MissingDigits, MoreThanOneCharacter, NotScalarValue, NumberSuffix, ReservedWord,
+        UnexpectedCharacter, UnknownEscape, UnmatchedBraceInText, UnterminatedCharacterLiteral,
+        UnterminatedInterpolation, UnterminatedRawText, UnterminatedText, UppercasePrefix,
     };
 
     /// A diagnostic the lexer should report, with its byte range.
@@ -1384,6 +1385,10 @@ mod tests {
         /// The escape as written.
         NotScalarValue(&'static str, Range<u32>),
         UnterminatedRawText(Range<u32>),
+        UnterminatedText(Range<u32>),
+        UnmatchedBraceInText(Range<u32>),
+        EmptyInterpolation(Range<u32>),
+        UnterminatedInterpolation(Range<u32>),
     }
 
     impl ExpectedDiagnostic {
@@ -1497,6 +1502,24 @@ mod tests {
                     Diagnostic::new(lex(19), "unterminated raw text", Primary::span(span(range)))
                         .with_help(r#"a raw text fits on one line and contains no `"`"#)
                 }
+                UnterminatedText(range) => {
+                    Diagnostic::new(lex(17), "unterminated text", Primary::span(span(range)))
+                        .with_help(r#"a text fits on one line; for several lines, write `"""`"#)
+                }
+                UnmatchedBraceInText(range) => Diagnostic::new(
+                    lex(17),
+                    "unmatched `}` in a text",
+                    Primary::span(span(range)),
+                )
+                .with_help(r"for a literal brace, write `\}`"),
+                EmptyInterpolation(range) => {
+                    Diagnostic::new(lex(20), "empty interpolation", Primary::span(span(range)))
+                }
+                UnterminatedInterpolation(range) => Diagnostic::new(
+                    lex(20),
+                    "unterminated interpolation",
+                    Primary::span(span(range)),
+                ),
             }
         }
     }
@@ -2970,5 +2993,615 @@ mod tests {
             ],
             &[],
         );
+    }
+
+    #[test]
+    fn text_gives_its_start_its_piece_and_its_end() {
+        assert_lexed(
+            r#""abc""#,
+            &[
+                r#"1:1 TextStart "\"""#,
+                r#"1:2 TextPiece("abc") "abc""#,
+                r#"1:5 TextEnd "\"""#,
+                r#"1:6 Eof """#,
+            ],
+            &[],
+        );
+        // No empty piece.
+        assert_lexed(
+            r#""""#,
+            &[
+                r#"1:1 TextStart "\"""#,
+                r#"1:2 TextEnd "\"""#,
+                r#"1:3 Eof """#,
+            ],
+            &[],
+        );
+    }
+
+    #[test]
+    fn text_with_an_interpolation_and_a_format() {
+        assert_lexed(
+            r#""a\t{b:>8}""#,
+            &[
+                r#"1:1 TextStart "\"""#,
+                r#"1:2 TextPiece("a\t") "a\\t""#,
+                r#"1:5 InterpolationStart "{""#,
+                r#"1:6 Identifier "b""#,
+                r#"1:7 Format(">8") ":>8""#,
+                r#"1:10 InterpolationEnd "}""#,
+                r#"1:11 TextEnd "\"""#,
+                r#"1:12 Eof """#,
+            ],
+            &[],
+        );
+    }
+
+    #[test]
+    fn escapes_give_their_characters_in_one_piece() {
+        assert_lexed(
+            r#""a\tb\u{e9}\{x\}""#,
+            &[
+                r#"1:1 TextStart "\"""#,
+                r#"1:2 TextPiece("a\tbé{x}") "a\\tb\\u{e9}\\{x\\}""#,
+                r#"1:17 TextEnd "\"""#,
+                r#"1:18 Eof """#,
+            ],
+            &[],
+        );
+        // A refused escape gives U+FFFD, and the text goes on.
+        assert_lexed(
+            r#""a\qb""#,
+            &[
+                r#"1:1 TextStart "\"""#,
+                r#"1:2 TextPiece("a�b") "a\\qb""#,
+                r#"1:6 TextEnd "\"""#,
+                r#"1:7 Eof """#,
+            ],
+            &[UnknownEscape(r"\q", 2..4)],
+        );
+    }
+
+    #[test]
+    fn text_is_not_a_comment() {
+        assert_lexed(
+            r#""a // b""#,
+            &[
+                r#"1:1 TextStart "\"""#,
+                r#"1:2 TextPiece("a // b") "a // b""#,
+                r#"1:8 TextEnd "\"""#,
+                r#"1:9 Eof """#,
+            ],
+            &[],
+        );
+    }
+
+    #[test]
+    fn examples_of_lex_20_give_their_tokens() {
+        let cases: [(&str, &[&str]); 5] = [
+            (
+                r#""{name}""#,
+                &[
+                    r#"1:1 TextStart "\"""#,
+                    r#"1:2 InterpolationStart "{""#,
+                    r#"1:3 Identifier "name""#,
+                    r#"1:7 InterpolationEnd "}""#,
+                    r#"1:8 TextEnd "\"""#,
+                    r#"1:9 Eof """#,
+                ],
+            ),
+            (
+                r#""{removed.len()} fichier(s)""#,
+                &[
+                    r#"1:1 TextStart "\"""#,
+                    r#"1:2 InterpolationStart "{""#,
+                    r#"1:3 Identifier "removed""#,
+                    r#"1:10 Dot ".""#,
+                    r#"1:11 Identifier "len""#,
+                    r#"1:14 OpenParen "(""#,
+                    r#"1:15 CloseParen ")""#,
+                    r#"1:16 InterpolationEnd "}""#,
+                    r#"1:17 TextPiece(" fichier(s)") " fichier(s)""#,
+                    r#"1:28 TextEnd "\"""#,
+                    r#"1:29 Eof """#,
+                ],
+            ),
+            (
+                r#""{cents / 100:>8}""#,
+                &[
+                    r#"1:1 TextStart "\"""#,
+                    r#"1:2 InterpolationStart "{""#,
+                    r#"1:3 Identifier "cents""#,
+                    r#"1:9 Slash "/""#,
+                    r#"1:11 Int(Some(100)) "100""#,
+                    r#"1:14 Format(">8") ":>8""#,
+                    r#"1:17 InterpolationEnd "}""#,
+                    r#"1:18 TextEnd "\"""#,
+                    r#"1:19 Eof """#,
+                ],
+            ),
+            (
+                r#""{names.join(", ")}""#,
+                &[
+                    r#"1:1 TextStart "\"""#,
+                    r#"1:2 InterpolationStart "{""#,
+                    r#"1:3 Identifier "names""#,
+                    r#"1:8 Dot ".""#,
+                    r#"1:9 Identifier "join""#,
+                    r#"1:13 OpenParen "(""#,
+                    r#"1:14 TextStart "\"""#,
+                    r#"1:15 TextPiece(", ") ", ""#,
+                    r#"1:17 TextEnd "\"""#,
+                    r#"1:18 CloseParen ")""#,
+                    r#"1:19 InterpolationEnd "}""#,
+                    r#"1:20 TextEnd "\"""#,
+                    r#"1:21 Eof """#,
+                ],
+            ),
+            (
+                r#""\{name\}""#,
+                &[
+                    r#"1:1 TextStart "\"""#,
+                    r#"1:2 TextPiece("{name}") "\\{name\\}""#,
+                    r#"1:10 TextEnd "\"""#,
+                    r#"1:11 Eof """#,
+                ],
+            ),
+        ];
+
+        for (text, expected_tokens) in cases {
+            assert_lexed(text, expected_tokens, &[]);
+        }
+    }
+
+    #[test]
+    fn colon_opens_the_format_only_at_depth_zero() {
+        let cases: [(&str, &[&str]); 3] = [
+            (
+                r#""{f(a: 1):x}""#,
+                &[
+                    r#"1:1 TextStart "\"""#,
+                    r#"1:2 InterpolationStart "{""#,
+                    r#"1:3 Identifier "f""#,
+                    r#"1:4 OpenParen "(""#,
+                    r#"1:5 Identifier "a""#,
+                    r#"1:6 Colon ":""#,
+                    r#"1:8 Int(Some(1)) "1""#,
+                    r#"1:9 CloseParen ")""#,
+                    r#"1:10 Format("x") ":x""#,
+                    r#"1:12 InterpolationEnd "}""#,
+                    r#"1:13 TextEnd "\"""#,
+                    r#"1:14 Eof """#,
+                ],
+            ),
+            (
+                r#""{xs[a:b]}""#,
+                &[
+                    r#"1:1 TextStart "\"""#,
+                    r#"1:2 InterpolationStart "{""#,
+                    r#"1:3 Identifier "xs""#,
+                    r#"1:5 OpenBracket "[""#,
+                    r#"1:6 Identifier "a""#,
+                    r#"1:7 Colon ":""#,
+                    r#"1:8 Identifier "b""#,
+                    r#"1:9 CloseBracket "]""#,
+                    r#"1:10 InterpolationEnd "}""#,
+                    r#"1:11 TextEnd "\"""#,
+                    r#"1:12 Eof """#,
+                ],
+            ),
+            (
+                r#""{{a: 1}}""#,
+                &[
+                    r#"1:1 TextStart "\"""#,
+                    r#"1:2 InterpolationStart "{""#,
+                    r#"1:3 OpenBrace "{""#,
+                    r#"1:4 Identifier "a""#,
+                    r#"1:5 Colon ":""#,
+                    r#"1:7 Int(Some(1)) "1""#,
+                    r#"1:8 CloseBrace "}""#,
+                    r#"1:9 InterpolationEnd "}""#,
+                    r#"1:10 TextEnd "\"""#,
+                    r#"1:11 Eof """#,
+                ],
+            ),
+        ];
+
+        for (text, expected_tokens) in cases {
+            assert_lexed(text, expected_tokens, &[]);
+        }
+    }
+
+    #[test]
+    fn braces_of_a_block_in_an_interpolation_are_delimiters() {
+        assert_lexed(
+            r#""{if a { 1 } else { 2 }}""#,
+            &[
+                r#"1:1 TextStart "\"""#,
+                r#"1:2 InterpolationStart "{""#,
+                r#"1:3 Keyword(If) "if""#,
+                r#"1:6 Identifier "a""#,
+                r#"1:8 OpenBrace "{""#,
+                r#"1:10 Int(Some(1)) "1""#,
+                r#"1:12 CloseBrace "}""#,
+                r#"1:14 Keyword(Else) "else""#,
+                r#"1:19 OpenBrace "{""#,
+                r#"1:21 Int(Some(2)) "2""#,
+                r#"1:23 CloseBrace "}""#,
+                r#"1:24 InterpolationEnd "}""#,
+                r#"1:25 TextEnd "\"""#,
+                r#"1:26 Eof """#,
+            ],
+            &[],
+        );
+    }
+
+    #[test]
+    fn text_inside_an_interpolation_follows_the_same_rules() {
+        // The example of the lexing notion sheet, §4.
+        assert_lexed(
+            r#""a{f("b{x}")}c""#,
+            &[
+                r#"1:1 TextStart "\"""#,
+                r#"1:2 TextPiece("a") "a""#,
+                r#"1:3 InterpolationStart "{""#,
+                r#"1:4 Identifier "f""#,
+                r#"1:5 OpenParen "(""#,
+                r#"1:6 TextStart "\"""#,
+                r#"1:7 TextPiece("b") "b""#,
+                r#"1:8 InterpolationStart "{""#,
+                r#"1:9 Identifier "x""#,
+                r#"1:10 InterpolationEnd "}""#,
+                r#"1:11 TextEnd "\"""#,
+                r#"1:12 CloseParen ")""#,
+                r#"1:13 InterpolationEnd "}""#,
+                r#"1:14 TextPiece("c") "c""#,
+                r#"1:15 TextEnd "\"""#,
+                r#"1:16 Eof """#,
+            ],
+            &[],
+        );
+    }
+
+    #[test]
+    fn neighboring_interpolations_give_no_empty_piece() {
+        assert_lexed(
+            r#""{a}{b}""#,
+            &[
+                r#"1:1 TextStart "\"""#,
+                r#"1:2 InterpolationStart "{""#,
+                r#"1:3 Identifier "a""#,
+                r#"1:4 InterpolationEnd "}""#,
+                r#"1:5 InterpolationStart "{""#,
+                r#"1:6 Identifier "b""#,
+                r#"1:7 InterpolationEnd "}""#,
+                r#"1:8 TextEnd "\"""#,
+                r#"1:9 Eof """#,
+            ],
+            &[],
+        );
+    }
+
+    #[test]
+    fn two_slashes_in_an_interpolation_are_two_slashes() {
+        assert_lexed(
+            r#""{a // b}""#,
+            &[
+                r#"1:1 TextStart "\"""#,
+                r#"1:2 InterpolationStart "{""#,
+                r#"1:3 Identifier "a""#,
+                r#"1:5 Slash "/""#,
+                r#"1:6 Slash "/""#,
+                r#"1:8 Identifier "b""#,
+                r#"1:9 InterpolationEnd "}""#,
+                r#"1:10 TextEnd "\"""#,
+                r#"1:11 Eof """#,
+            ],
+            &[],
+        );
+        // After the text, `//` opens a comment again.
+        assert_lexed(
+            r#""{a}" // b"#,
+            &[
+                r#"1:1 TextStart "\"""#,
+                r#"1:2 InterpolationStart "{""#,
+                r#"1:3 Identifier "a""#,
+                r#"1:4 InterpolationEnd "}""#,
+                r#"1:5 TextEnd "\"""#,
+                r#"1:11 Eof """#,
+            ],
+            &[],
+        );
+    }
+
+    #[test]
+    fn empty_format_gives_an_empty_value() {
+        assert_lexed(
+            r#""{x:}""#,
+            &[
+                r#"1:1 TextStart "\"""#,
+                r#"1:2 InterpolationStart "{""#,
+                r#"1:3 Identifier "x""#,
+                r#"1:4 Format("") ":""#,
+                r#"1:5 InterpolationEnd "}""#,
+                r#"1:6 TextEnd "\"""#,
+                r#"1:7 Eof """#,
+            ],
+            &[],
+        );
+    }
+
+    #[test]
+    fn unterminated_text_runs_to_the_end_of_the_line() {
+        assert_lexed(
+            r#""abc"#,
+            &[
+                r#"1:1 TextStart "\"""#,
+                r#"1:2 TextPiece("abc") "abc""#,
+                r#"1:5 TextEnd """#,
+                r#"1:5 Eof """#,
+            ],
+            &[UnterminatedText(0..4)],
+        );
+        assert_lexed(
+            r#"""#,
+            &[
+                r#"1:1 TextStart "\"""#,
+                r#"1:2 TextEnd """#,
+                r#"1:2 Eof """#,
+            ],
+            &[UnterminatedText(0..1)],
+        );
+        // The end token comes before the line ending, which lexing reads as usual.
+        assert_lexed(
+            "\"abc\n+",
+            &[
+                r#"1:1 TextStart "\"""#,
+                r#"1:2 TextPiece("abc") "abc""#,
+                r#"1:5 TextEnd """#,
+                r#"1:5 Newline "\n""#,
+                r#"2:1 Plus "+""#,
+                r#"2:2 Eof """#,
+            ],
+            &[UnterminatedText(0..4)],
+        );
+        assert_lexed(
+            "\"abc\r\n+",
+            &[
+                r#"1:1 TextStart "\"""#,
+                r#"1:2 TextPiece("abc") "abc""#,
+                r#"1:5 TextEnd """#,
+                r#"1:5 Newline "\r\n""#,
+                r#"2:1 Plus "+""#,
+                r#"2:2 Eof """#,
+            ],
+            &[UnterminatedText(0..4)],
+        );
+    }
+
+    #[test]
+    fn lone_closing_brace_is_refused_and_kept_in_the_piece() {
+        assert_lexed(
+            r#""a}b""#,
+            &[
+                r#"1:1 TextStart "\"""#,
+                r#"1:2 TextPiece("a}b") "a}b""#,
+                r#"1:5 TextEnd "\"""#,
+                r#"1:6 Eof """#,
+            ],
+            &[UnmatchedBraceInText(2..3)],
+        );
+    }
+
+    #[test]
+    fn empty_interpolation_is_refused() {
+        assert_lexed(
+            r#""{}""#,
+            &[
+                r#"1:1 TextStart "\"""#,
+                r#"1:2 InterpolationStart "{""#,
+                r#"1:3 InterpolationEnd "}""#,
+                r#"1:4 TextEnd "\"""#,
+                r#"1:5 Eof """#,
+            ],
+            &[EmptyInterpolation(1..3)],
+        );
+        for text in [r#""{ }""#, "\"{\t}\""] {
+            assert_lexed(
+                text,
+                &[
+                    r#"1:1 TextStart "\"""#,
+                    r#"1:2 InterpolationStart "{""#,
+                    r#"1:4 InterpolationEnd "}""#,
+                    r#"1:5 TextEnd "\"""#,
+                    r#"1:6 Eof """#,
+                ],
+                &[EmptyInterpolation(1..4)],
+            );
+        }
+        // Only spaces and tabs count: a no-break space is an unexpected character.
+        assert_lexed(
+            "\"{\u{a0}}\"",
+            &[
+                r#"1:1 TextStart "\"""#,
+                r#"1:2 InterpolationStart "{""#,
+                r#"1:4 InterpolationEnd "}""#,
+                r#"1:5 TextEnd "\"""#,
+                r#"1:6 Eof """#,
+            ],
+            &[UnexpectedCharacter('\u{a0}', 2..4)],
+        );
+        // A format alone is not empty: checking the expression is the parser's job.
+        assert_lexed(
+            r#""{:x}""#,
+            &[
+                r#"1:1 TextStart "\"""#,
+                r#"1:2 InterpolationStart "{""#,
+                r#"1:3 Format("x") ":x""#,
+                r#"1:5 InterpolationEnd "}""#,
+                r#"1:6 TextEnd "\"""#,
+                r#"1:7 Eof """#,
+            ],
+            &[],
+        );
+    }
+
+    #[test]
+    fn unterminated_interpolation_ends_with_its_text_at_the_line_end() {
+        assert_lexed(
+            r#""{a"#,
+            &[
+                r#"1:1 TextStart "\"""#,
+                r#"1:2 InterpolationStart "{""#,
+                r#"1:3 Identifier "a""#,
+                r#"1:4 InterpolationEnd """#,
+                r#"1:4 TextEnd """#,
+                r#"1:4 Eof """#,
+            ],
+            &[UnterminatedInterpolation(1..3)],
+        );
+        assert_lexed(
+            "\"{a\n+",
+            &[
+                r#"1:1 TextStart "\"""#,
+                r#"1:2 InterpolationStart "{""#,
+                r#"1:3 Identifier "a""#,
+                r#"1:4 InterpolationEnd """#,
+                r#"1:4 TextEnd """#,
+                r#"1:4 Newline "\n""#,
+                r#"2:1 Plus "+""#,
+                r#"2:2 Eof """#,
+            ],
+            &[UnterminatedInterpolation(1..3)],
+        );
+        // Under a `(`, which closes with the interpolation: the line ending gives a token.
+        assert_lexed(
+            "\"{f(a\n+",
+            &[
+                r#"1:1 TextStart "\"""#,
+                r#"1:2 InterpolationStart "{""#,
+                r#"1:3 Identifier "f""#,
+                r#"1:4 OpenParen "(""#,
+                r#"1:5 Identifier "a""#,
+                r#"1:6 InterpolationEnd """#,
+                r#"1:6 TextEnd """#,
+                r#"1:6 Newline "\n""#,
+                r#"2:1 Plus "+""#,
+                r#"2:2 Eof """#,
+            ],
+            &[UnterminatedInterpolation(1..5)],
+        );
+        // In a format, which stops at the line end.
+        assert_lexed(
+            "\"{x:ab\n+",
+            &[
+                r#"1:1 TextStart "\"""#,
+                r#"1:2 InterpolationStart "{""#,
+                r#"1:3 Identifier "x""#,
+                r#"1:4 Format("ab") ":ab""#,
+                r#"1:7 InterpolationEnd """#,
+                r#"1:7 TextEnd """#,
+                r#"1:7 Newline "\n""#,
+                r#"2:1 Plus "+""#,
+                r#"2:2 Eof """#,
+            ],
+            &[UnterminatedInterpolation(1..6)],
+        );
+    }
+
+    #[test]
+    fn line_end_reports_only_the_innermost_text_or_interpolation() {
+        assert_lexed(
+            "\"{f(\"{a\n+",
+            &[
+                r#"1:1 TextStart "\"""#,
+                r#"1:2 InterpolationStart "{""#,
+                r#"1:3 Identifier "f""#,
+                r#"1:4 OpenParen "(""#,
+                r#"1:5 TextStart "\"""#,
+                r#"1:6 InterpolationStart "{""#,
+                r#"1:7 Identifier "a""#,
+                r#"1:8 InterpolationEnd """#,
+                r#"1:8 TextEnd """#,
+                r#"1:8 InterpolationEnd """#,
+                r#"1:8 TextEnd """#,
+                r#"1:8 Newline "\n""#,
+                r#"2:1 Plus "+""#,
+                r#"2:2 Eof """#,
+            ],
+            &[UnterminatedInterpolation(5..7)],
+        );
+        assert_lexed(
+            "\"{f(\"ab\n+",
+            &[
+                r#"1:1 TextStart "\"""#,
+                r#"1:2 InterpolationStart "{""#,
+                r#"1:3 Identifier "f""#,
+                r#"1:4 OpenParen "(""#,
+                r#"1:5 TextStart "\"""#,
+                r#"1:6 TextPiece("ab") "ab""#,
+                r#"1:8 TextEnd """#,
+                r#"1:8 InterpolationEnd """#,
+                r#"1:8 TextEnd """#,
+                r#"1:8 Newline "\n""#,
+                r#"2:1 Plus "+""#,
+                r#"2:2 Eof """#,
+            ],
+            &[UnterminatedText(4..7)],
+        );
+    }
+
+    #[test]
+    fn closing_delimiter_does_not_cross_an_interpolation() {
+        // The `}` closes the interpolation and the `(` inside it, not the outer block.
+        assert_lexed(
+            r#"{ "{ ( } x" }"#,
+            &[
+                r#"1:1 OpenBrace "{""#,
+                r#"1:3 TextStart "\"""#,
+                r#"1:4 InterpolationStart "{""#,
+                r#"1:6 OpenParen "(""#,
+                r#"1:8 InterpolationEnd "}""#,
+                r#"1:9 TextPiece(" x") " x""#,
+                r#"1:11 TextEnd "\"""#,
+                r#"1:13 CloseBrace "}""#,
+                r#"1:14 Eof """#,
+            ],
+            &[],
+        );
+        // The `)` cannot close the outer `(`: the first line ending gives no token. The second
+        // `)` closes it: the next line ending gives one.
+        assert_lexed(
+            "( \"{ ) }\"\n)\n+",
+            &[
+                r#"1:1 OpenParen "(""#,
+                r#"1:3 TextStart "\"""#,
+                r#"1:4 InterpolationStart "{""#,
+                r#"1:6 CloseParen ")""#,
+                r#"1:8 InterpolationEnd "}""#,
+                r#"1:9 TextEnd "\"""#,
+                r#"2:1 CloseParen ")""#,
+                r#"2:2 Newline "\n""#,
+                r#"3:1 Plus "+""#,
+                r#"3:2 Eof """#,
+            ],
+            &[],
+        );
+    }
+
+    #[test]
+    fn deeply_nested_texts_do_not_overflow_the_stack() {
+        // Tests run on threads with a small stack: a recursive lexer would overflow here.
+        let depth = 10_000;
+        let text = format!("{}x{}", "\"{".repeat(depth), "}\"".repeat(depth));
+
+        let mut source_map = SourceMap::new();
+        let file = source_map.add(String::from("test.fm"), text);
+        let lexed = tokenize(&source_map, file);
+
+        assert!(lexed.diagnostics().is_empty());
+        // Per level: `TextStart`, `InterpolationStart`, `InterpolationEnd`, `TextEnd`. Then
+        // `x` and `Eof`.
+        assert_eq!(lexed.tokens().len(), 4 * depth + 2);
     }
 }
