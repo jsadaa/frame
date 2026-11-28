@@ -240,17 +240,24 @@ pub enum TokenKind {
     /// A raw text, such as `r"C:\Users"`. It holds the characters between the quotes, as
     /// written; without the closing quote, those up to the end of the line.
     RawText(String),
-    /// todo!
+    /// The `"` that opens a text.
+    ///
+    /// A text gives this token, then its pieces and interpolations, then `TextEnd`.
     TextStart,
-    /// todo!
+    /// Characters of a text, between its quotes and its interpolations. It holds them with
+    /// their escapes read: `\t` gives a tab, and a refused escape gives U+FFFD. It is never
+    /// empty.
     TextPiece(String),
-    /// todo!
+    /// The `"` that closes a text. Without it, the text ends at the end of the line, and the
+    /// span is empty.
     TextEnd,
-    /// todo!
+    /// The `{` that opens an interpolation in a text.
     InterpolationStart,
-    /// todo!
+    /// The `}` that closes an interpolation. Without it, the interpolation ends at the end of
+    /// the line, and the span is empty.
     InterpolationEnd,
-    /// todo!
+    /// The format of an interpolation, such as `:>8` in `"{cents:>8}"`. It covers the `:`, and
+    /// holds what follows it as written, up to the `}`.
     Format(String),
     /// `_` alone, the wildcard of patterns. `_x` is an identifier.
     Underscore,
