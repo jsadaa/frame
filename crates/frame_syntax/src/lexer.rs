@@ -678,39 +678,11 @@ impl<'a> Lexer<'a> {
 
                     self.read_text(start);
                 }
-                '}' if self.closes_interpolation() => {
-                    let start = self.cursor.position();
-                    let interpolation = self.close_interpolation();
-                    self.cursor.advance();
-
-                    // `{` is one byte. Not `trim`, which also takes Unicode spaces (C.32).
-                    let inside = &self.text[interpolation.brace_start + 1..start];
-                    if inside.chars().all(|c| matches!(c, ' ' | '\t')) {
-                        self.diagnostics.push(empty_interpolation(
-                            self.span_from(interpolation.brace_start),
-                        ));
-                    }
-
-                    self.tokens.push(Token::new(
-                        TokenKind::InterpolationEnd,
-                        self.span_from(start),
-                    ));
-
-                    self.read_text(interpolation.text_start);
-                }
+                '}' if self.closes_interpolation() => self.read_interpolation_end(),
+                // At depth zero: no delimiter is open in the innermost interpolation (LEX-20).
                 ':' if matches!(self.open_delimiters.last(), Some(Open::Interpolation(_))) => {
-                    let start = self.cursor.position();
-
-                    while !self.cursor.at_line_end() && self.cursor.first() != Some('}') {
-                        self.cursor.advance();
-                    }
-
-                    // `:` is one byte.
-                    let content = &self.text[start + 1..self.cursor.position()];
-                    self.tokens.push(Token::new(
-                        TokenKind::Format(content.to_string()),
-                        self.span_from(start),
-                    ));
+                    let token = self.read_format();
+                    self.tokens.push(token);
                 }
                 // Before words: they would read `r` as an identifier.
                 'r' if self.cursor.second() == Some('"') => {
@@ -913,6 +885,46 @@ impl<'a> Lexer<'a> {
                 self.span_from(start),
             ));
         }
+    }
+
+    /// Reads the `}` that closes the innermost interpolation, then the rest of its text. An
+    /// empty interpolation is reported.
+    fn read_interpolation_end(&mut self) {
+        let start = self.cursor.position();
+        let interpolation = self.close_interpolation();
+        self.cursor.advance();
+
+        // `{` is one byte. Not `trim`, which also takes Unicode spaces (C.32).
+        let inside = &self.text[interpolation.brace_start + 1..start];
+        if inside.chars().all(|c| matches!(c, ' ' | '\t')) {
+            self.diagnostics.push(empty_interpolation(
+                self.span_from(interpolation.brace_start),
+            ));
+        }
+
+        self.tokens.push(Token::new(
+            TokenKind::InterpolationEnd,
+            self.span_from(start),
+        ));
+
+        self.read_text(interpolation.text_start);
+    }
+
+    /// Reads the format of an interpolation, from its `:` to its `}` or to the end of the
+    /// line. It holds what follows the `:`, as written.
+    fn read_format(&mut self) -> Token {
+        let start = self.cursor.position();
+
+        while !self.cursor.at_line_end() && self.cursor.first() != Some('}') {
+            self.cursor.advance();
+        }
+
+        // `:` is one byte.
+        let content = &self.text[start + 1..self.cursor.position()];
+        Token::new(
+            TokenKind::Format(content.to_string()),
+            self.span_from(start),
+        )
     }
 
     /// Reads a raw text, up to its closing `"` on the same line. An unterminated raw text is
