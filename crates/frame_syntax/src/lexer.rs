@@ -3398,6 +3398,20 @@ mod tests {
             ],
             &[UnterminatedText(0..4)],
         );
+        // After an interpolation, the diagnostic still starts at the text's `"`.
+        assert_lexed(
+            r#""{a}b"#,
+            &[
+                r#"1:1 TextStart "\"""#,
+                r#"1:2 InterpolationStart "{""#,
+                r#"1:3 Identifier "a""#,
+                r#"1:4 InterpolationEnd "}""#,
+                r#"1:5 TextPiece("b") "b""#,
+                r#"1:6 TextEnd """#,
+                r#"1:6 Eof """#,
+            ],
+            &[UnterminatedText(0..5)],
+        );
     }
 
     #[test]
