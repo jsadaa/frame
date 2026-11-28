@@ -829,7 +829,7 @@ impl<'a> Lexer<'a> {
     }
 
     fn read_text(&mut self, text_start: usize) {
-        let mut text_buffer = String::new();
+        let mut piece = String::new();
         let piece_start = self.cursor.position();
 
         while let Some(c) = self.cursor.first() {
@@ -837,9 +837,9 @@ impl<'a> Lexer<'a> {
                 '"' => {
                     let start = self.cursor.position();
 
-                    if !text_buffer.is_empty() {
+                    if !piece.is_empty() {
                         self.tokens.push(Token::new(
-                            TokenKind::TextPiece(std::mem::take(&mut text_buffer)),
+                            TokenKind::TextPiece(std::mem::take(&mut piece)),
                             self.span_from(piece_start),
                         ));
                     }
@@ -853,9 +853,9 @@ impl<'a> Lexer<'a> {
                 '{' => {
                     let start = self.cursor.position();
 
-                    if !text_buffer.is_empty() {
+                    if !piece.is_empty() {
                         self.tokens.push(Token::new(
-                            TokenKind::TextPiece(std::mem::take(&mut text_buffer)),
+                            TokenKind::TextPiece(std::mem::take(&mut piece)),
                             self.span_from(piece_start),
                         ));
                     }
@@ -874,11 +874,11 @@ impl<'a> Lexer<'a> {
                     let rest = self.cursor.as_str();
                     let end = match escape::read(rest) {
                         Ok((c, len)) => {
-                            text_buffer.push(c);
+                            piece.push(c);
                             start + len
                         }
                         Err(error) => {
-                            text_buffer.push(char::REPLACEMENT_CHARACTER);
+                            piece.push(char::REPLACEMENT_CHARACTER);
                             self.diagnostics
                                 .push(error.to_diagnostic(rest, self.file, start));
 
@@ -898,10 +898,10 @@ impl<'a> Lexer<'a> {
 
                     self.diagnostics
                         .push(unmatched_brace_in_text(self.span_from(start)));
-                    text_buffer.push('}');
+                    piece.push('}');
                 }
                 c => {
-                    text_buffer.push(c);
+                    piece.push(c);
                     self.cursor.advance();
                 }
             }
@@ -911,9 +911,9 @@ impl<'a> Lexer<'a> {
         self.diagnostics
             .push(unterminated_text(self.span_from(text_start)));
 
-        if !text_buffer.is_empty() {
+        if !piece.is_empty() {
             self.tokens.push(Token::new(
-                TokenKind::TextPiece(text_buffer),
+                TokenKind::TextPiece(piece),
                 self.span_from(piece_start),
             ));
         }
