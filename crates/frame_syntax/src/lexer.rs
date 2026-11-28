@@ -14,6 +14,8 @@ const DOC_COMMENT_NOT_ALONE_ON_ITS_LINE: RuleCode = RuleCode::new(Prefix::Lex, 6
 const RESERVED_WORD: RuleCode = RuleCode::new(Prefix::Lex, 11);
 const CHARACTER_LITERAL: RuleCode = RuleCode::new(Prefix::Lex, 15);
 const RAW_TEXT: RuleCode = RuleCode::new(Prefix::Lex, 19);
+const TEXT_LITERAL: RuleCode = RuleCode::new(Prefix::Lex, 17);
+const INTERPOLATION: RuleCode = RuleCode::new(Prefix::Lex, 20);
 
 // Kept for future versions. None has a use yet, so each one is a name, and the lexer can
 // refuse it without knowing what the word declares.
@@ -77,6 +79,28 @@ fn character_literal_with_more_than_one_character(content: &str, span: Span) -> 
 fn unterminated_raw_text(span: Span) -> Diagnostic {
     Diagnostic::new(RAW_TEXT, "unterminated raw text", Primary::span(span))
         .with_help("a raw text fits on one line and contains no `\"`")
+}
+
+fn unterminated_text(span: Span) -> Diagnostic {
+    Diagnostic::new(TEXT_LITERAL, "unterminated text", Primary::span(span))
+        .with_help(r#"a text fits on one line; for several lines, write `"""`"#)
+}
+
+fn unmatched_brace_in_text(span: Span) -> Diagnostic {
+    Diagnostic::new(TEXT_LITERAL, "unmatched `}` in a text", Primary::span(span))
+        .with_help(r"for a literal brace, write `\}`")
+}
+
+fn empty_interpolation(span: Span) -> Diagnostic {
+    Diagnostic::new(INTERPOLATION, "empty interpolation", Primary::span(span))
+}
+
+fn unterminated_interpolation(span: Span) -> Diagnostic {
+    Diagnostic::new(
+        INTERPOLATION,
+        "unterminated interpolation",
+        Primary::span(span),
+    )
 }
 
 /// A token: its kind, and the span of text it covers.
@@ -216,6 +240,25 @@ pub enum TokenKind {
     /// A raw text, such as `r"C:\Users"`. It holds the characters between the quotes, as
     /// written; without the closing quote, those up to the end of the line.
     RawText(String),
+    /// The `"` that opens a text.
+    ///
+    /// A text gives this token, then its pieces and interpolations, then `TextEnd`.
+    TextStart,
+    /// Characters of a text, between its quotes and its interpolations. It holds them with
+    /// their escapes read: `\t` gives a tab, and a refused escape gives U+FFFD. It is never
+    /// empty.
+    TextPiece(String),
+    /// The `"` that closes a text. Without it, the text ends at the end of the line, and the
+    /// span is empty.
+    TextEnd,
+    /// The `{` that opens an interpolation in a text.
+    InterpolationStart,
+    /// The `}` that closes an interpolation. Without it, the interpolation ends at the end of
+    /// the line, and the span is empty.
+    InterpolationEnd,
+    /// The format of an interpolation, such as `:>8` in `"{cents:>8}"`. It covers the `:`, and
+    /// holds what follows it as written, up to the `}`.
+    Format(String),
     /// `_` alone, the wildcard of patterns. `_x` is an identifier.
     Underscore,
     /// A line ending: `\n` or `\r\n`.
@@ -224,12 +267,30 @@ pub enum TokenKind {
     Eof,
 }
 
-/// A delimiter that waits for its closing token.
+/// What waits for its closing token: a delimiter of code, or an interpolation.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum Open {
+    Delimiter(Delimiter),
+    Interpolation(Interpolation),
+}
+
+/// A delimiter of code. As a `usize`, it indexes `Lexer::open_counts`.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum Delimiter {
     Paren,
     Bracket,
     Brace,
+}
+
+/// An interpolation not closed yet.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+struct Interpolation {
+    /// Where its text starts, at the `"`.
+    text_start: usize,
+    /// Where it starts, at the `{`.
+    brace_start: usize,
+    /// The counts of the delimiters open outside it, put back when it closes.
+    outer_counts: [usize; 3],
 }
 
 /// A keyword.
@@ -550,8 +611,12 @@ struct Lexer<'a> {
     tokens: Vec<Token>,
     /// The delimiters not closed yet, innermost last.
     open_delimiters: Vec<Open>,
-    /// How many delimiters of each kind `open_delimiters` holds, indexed by `Open as usize`.
+    /// How many delimiters of each kind `open_delimiters` holds above the innermost
+    /// interpolation, indexed by `Delimiter as usize`.
     open_counts: [usize; 3],
+    /// The position of the last line end that cut a literal. That literal reported it, so
+    /// the interpolations it closes report nothing more.
+    reported_line_end: Option<usize>,
 }
 
 impl<'a> Lexer<'a> {
@@ -569,6 +634,7 @@ impl<'a> Lexer<'a> {
             tokens: Vec::new(),
             open_delimiters: Vec::new(),
             open_counts: [0; 3],
+            reported_line_end: None,
         }
     }
 
@@ -581,6 +647,10 @@ impl<'a> Lexer<'a> {
                     self.cursor.advance();
                 }
                 '\n' | '\r' => {
+                    if self.cursor.at_line_end() {
+                        self.close_interpolations_at_line_end();
+                    }
+
                     if let Some(token) = self.read_newline() {
                         if self.keeps_newline() {
                             self.tokens.push(token);
@@ -590,13 +660,28 @@ impl<'a> Lexer<'a> {
                         self.skip_unexpected(c);
                     }
                 }
-                '/' if self.cursor.second() == Some('/') => {
+                // In an interpolation, `//` is two `/` (LEX-5).
+                '/' if self.cursor.second() == Some('/') && !self.in_interpolation() => {
                     if let Some(token) = self.read_comment() {
                         self.tokens.push(token);
                     }
                 }
                 '\'' => {
                     let token = self.read_char();
+                    self.tokens.push(token);
+                }
+                '"' => {
+                    let start = self.cursor.position();
+                    self.cursor.advance();
+                    self.tokens
+                        .push(Token::new(TokenKind::TextStart, self.span_from(start)));
+
+                    self.read_text(start);
+                }
+                '}' if self.closes_interpolation() => self.read_interpolation_end(),
+                // At depth zero: no delimiter is open in the innermost interpolation (LEX-20).
+                ':' if matches!(self.open_delimiters.last(), Some(Open::Interpolation(_))) => {
+                    let token = self.read_format();
                     self.tokens.push(token);
                 }
                 // Before words: they would read `r` as an identifier.
@@ -629,6 +714,9 @@ impl<'a> Lexer<'a> {
                 "the lexer did not move at byte {before}"
             );
         }
+
+        // The end of the file is also a line end.
+        self.close_interpolations_at_line_end();
 
         self.tokens.push(Token::new(
             TokenKind::Eof,
@@ -674,7 +762,7 @@ impl<'a> Lexer<'a> {
         let span = self.span_from(start);
 
         if !terminated {
-            self.diagnostics.push(unterminated_character_literal(span));
+            self.report_cut(unterminated_character_literal(span));
             return Token::new(TokenKind::Char(char::REPLACEMENT_CHARACTER), span);
         }
 
@@ -709,6 +797,136 @@ impl<'a> Lexer<'a> {
         Token::new(TokenKind::Char(value), span)
     }
 
+    /// Reads the characters of a text, after its `"` or after an interpolation, up to its
+    /// closing `"`, its next `{`, or the end of the line. `text_start` is the position of the
+    /// text's `"`: a text cut by the end of the line is reported from there.
+    fn read_text(&mut self, text_start: usize) {
+        let mut piece = String::new();
+        let piece_start = self.cursor.position();
+
+        while let Some(c) = self.cursor.first() {
+            match c {
+                '"' => {
+                    self.push_piece(&mut piece, piece_start);
+
+                    let start = self.cursor.position();
+                    self.cursor.advance();
+                    self.tokens
+                        .push(Token::new(TokenKind::TextEnd, self.span_from(start)));
+
+                    return;
+                }
+                '{' => {
+                    self.push_piece(&mut piece, piece_start);
+
+                    let start = self.cursor.position();
+                    self.cursor.advance();
+                    self.tokens.push(Token::new(
+                        TokenKind::InterpolationStart,
+                        self.span_from(start),
+                    ));
+                    self.open_interpolation(text_start, start);
+
+                    return;
+                }
+                '\\' => {
+                    let start = self.cursor.position();
+                    let rest = self.cursor.as_str();
+                    let end = match escape::read(rest) {
+                        Ok((c, len)) => {
+                            piece.push(c);
+                            start + len
+                        }
+                        Err(error) => {
+                            piece.push(char::REPLACEMENT_CHARACTER);
+                            self.diagnostics
+                                .push(error.to_diagnostic(rest, self.file, start));
+
+                            start + error.len()
+                        }
+                    };
+
+                    while self.cursor.position() < end {
+                        self.cursor.advance();
+                    }
+                }
+                _ if self.cursor.at_line_end() => break,
+                // Reported, but kept in the piece.
+                '}' => {
+                    let start = self.cursor.position();
+                    self.cursor.advance();
+
+                    self.diagnostics
+                        .push(unmatched_brace_in_text(self.span_from(start)));
+                    piece.push('}');
+                }
+                c => {
+                    piece.push(c);
+                    self.cursor.advance();
+                }
+            }
+        }
+
+        // The line end, or the end of the file, ends the text.
+        self.report_cut(unterminated_text(self.span_from(text_start)));
+        self.push_piece(&mut piece, piece_start);
+        self.tokens.push(Token::new(
+            TokenKind::TextEnd,
+            self.span_from(self.cursor.position()),
+        ));
+    }
+
+    /// Pushes the piece read from `start` to the cursor, and leaves `piece` empty. An empty
+    /// piece gives no token.
+    fn push_piece(&mut self, piece: &mut String, start: usize) {
+        if !piece.is_empty() {
+            self.tokens.push(Token::new(
+                TokenKind::TextPiece(std::mem::take(piece)),
+                self.span_from(start),
+            ));
+        }
+    }
+
+    /// Reads the `}` that closes the innermost interpolation, then the rest of its text. An
+    /// empty interpolation is reported.
+    fn read_interpolation_end(&mut self) {
+        let start = self.cursor.position();
+        let interpolation = self.close_interpolation();
+        self.cursor.advance();
+
+        // `{` is one byte. Not `trim`, which also takes Unicode spaces (C.32).
+        let inside = &self.text[interpolation.brace_start + 1..start];
+        if inside.chars().all(|c| matches!(c, ' ' | '\t')) {
+            self.diagnostics.push(empty_interpolation(
+                self.span_from(interpolation.brace_start),
+            ));
+        }
+
+        self.tokens.push(Token::new(
+            TokenKind::InterpolationEnd,
+            self.span_from(start),
+        ));
+
+        self.read_text(interpolation.text_start);
+    }
+
+    /// Reads the format of an interpolation, from its `:` to its `}` or to the end of the
+    /// line. It holds what follows the `:`, as written.
+    fn read_format(&mut self) -> Token {
+        let start = self.cursor.position();
+
+        while !self.cursor.at_line_end() && self.cursor.first() != Some('}') {
+            self.cursor.advance();
+        }
+
+        // `:` is one byte.
+        let content = &self.text[start + 1..self.cursor.position()];
+        Token::new(
+            TokenKind::Format(content.to_string()),
+            self.span_from(start),
+        )
+    }
+
     /// Reads a raw text, up to its closing `"` on the same line. An unterminated raw text is
     /// reported, then read with what it holds up to the end of the line.
     fn read_raw_text(&mut self) -> Token {
@@ -726,8 +944,7 @@ impl<'a> Lexer<'a> {
         if self.cursor.first() == Some('"') {
             self.cursor.advance();
         } else {
-            self.diagnostics
-                .push(unterminated_raw_text(self.span_from(start)));
+            self.report_cut(unterminated_raw_text(self.span_from(start)));
         }
 
         Token::new(TokenKind::RawText(content), self.span_from(start))
@@ -898,7 +1115,7 @@ impl<'a> Lexer<'a> {
     fn keeps_newline(&self) -> bool {
         let inside_parens_or_brackets = matches!(
             self.open_delimiters.last(),
-            Some(Open::Paren | Open::Bracket)
+            Some(Open::Delimiter(Delimiter::Paren | Delimiter::Bracket))
         );
         let after_newline = matches!(
             self.tokens.last().map(Token::kind),
@@ -911,19 +1128,24 @@ impl<'a> Lexer<'a> {
     /// Updates the open delimiters after a token of kind `kind`.
     fn track_delimiter(&mut self, kind: &TokenKind) {
         match kind {
-            TokenKind::OpenParen => self.open(Open::Paren),
-            TokenKind::OpenBracket => self.open(Open::Bracket),
-            TokenKind::OpenBrace => self.open(Open::Brace),
-            TokenKind::CloseParen => self.close(Open::Paren),
-            TokenKind::CloseBracket => self.close(Open::Bracket),
-            TokenKind::CloseBrace => self.close(Open::Brace),
+            TokenKind::OpenParen => self.open(Delimiter::Paren),
+            TokenKind::OpenBracket => self.open(Delimiter::Bracket),
+            TokenKind::OpenBrace => self.open(Delimiter::Brace),
+            TokenKind::CloseParen => self.close(Delimiter::Paren),
+            TokenKind::CloseBracket => self.close(Delimiter::Bracket),
+            TokenKind::CloseBrace => self.close(Delimiter::Brace),
             _ => {}
         }
     }
 
-    fn open(&mut self, delimiter: Open) {
-        self.open_delimiters.push(delimiter);
+    fn open(&mut self, delimiter: Delimiter) {
+        self.open_delimiters.push(Open::Delimiter(delimiter));
         self.open_counts[delimiter as usize] += 1;
+    }
+
+    /// Returns how many `delimiter` are open above the innermost interpolation.
+    fn open_count(&self, delimiter: Delimiter) -> usize {
+        self.open_counts[delimiter as usize]
     }
 
     /// Closes `delimiter`, and any delimiter left open inside it.
@@ -931,16 +1153,91 @@ impl<'a> Lexer<'a> {
     /// Without an open `delimiter`, nothing changes: a missing `)` does not turn every later
     /// line ending into a space. The counts tell it at once; a search through the stack would
     /// make `((((…]]]]` quadratic.
-    fn close(&mut self, delimiter: Open) {
-        if self.open_counts[delimiter as usize] == 0 {
+    fn close(&mut self, delimiter: Delimiter) {
+        if self.open_count(delimiter) == 0 {
             return;
         }
 
         while let Some(open) = self.open_delimiters.pop() {
+            let Open::Delimiter(open) = open else {
+                unreachable!("the counts only see the delimiters above the innermost interpolation")
+            };
+
             self.open_counts[open as usize] -= 1;
             if open == delimiter {
                 break;
             }
+        }
+    }
+
+    /// Returns whether an interpolation is open.
+    fn in_interpolation(&self) -> bool {
+        // Every counted delimiter lies above the innermost interpolation, so the stack holds
+        // more than the counts only when an interpolation is open.
+        self.open_delimiters.len() > self.open_counts.iter().sum::<usize>()
+    }
+
+    /// Returns whether a `}` read now closes an interpolation: one is open, and no `{` is left
+    /// open inside it.
+    fn closes_interpolation(&self) -> bool {
+        self.in_interpolation() && self.open_count(Delimiter::Brace) == 0
+    }
+
+    fn open_interpolation(&mut self, text_start: usize, brace_start: usize) {
+        // A delimiter inside the interpolation cannot close one outside it. So the counts
+        // start again from zero, and the outer ones come back when it closes.
+        let outer_counts = std::mem::take(&mut self.open_counts);
+
+        self.open_delimiters
+            .push(Open::Interpolation(Interpolation {
+                text_start,
+                brace_start,
+                outer_counts,
+            }));
+    }
+
+    /// Closes the innermost interpolation, and any delimiter left open inside it, then
+    /// returns it.
+    fn close_interpolation(&mut self) -> Interpolation {
+        while let Some(open) = self.open_delimiters.pop() {
+            if let Open::Interpolation(interpolation) = open {
+                self.open_counts = interpolation.outer_counts;
+                return interpolation;
+            }
+        }
+
+        unreachable!("the caller checked that an interpolation is open")
+    }
+
+    /// Reports a literal cut by the end of its line, and remembers that this line end is
+    /// reported.
+    fn report_cut(&mut self, diagnostic: Diagnostic) {
+        self.diagnostics.push(diagnostic);
+        self.reported_line_end = Some(self.cursor.position());
+    }
+
+    /// Closes each interpolation still open, with its text: neither holds a line ending.
+    /// Their end tokens are empty, at the line end.
+    ///
+    /// The line end is reported once (DIA-3): by the literal it cuts, if any, or else by the
+    /// innermost interpolation.
+    fn close_interpolations_at_line_end(&mut self) {
+        let mut reported = self.reported_line_end == Some(self.cursor.position());
+
+        while self.in_interpolation() {
+            let interpolation = self.close_interpolation();
+
+            if !reported {
+                self.diagnostics.push(unterminated_interpolation(
+                    self.span_from(interpolation.brace_start),
+                ));
+                reported = true;
+            }
+
+            let end = self.span_from(self.cursor.position());
+            self.tokens
+                .push(Token::new(TokenKind::InterpolationEnd, end));
+            self.tokens.push(Token::new(TokenKind::TextEnd, end));
         }
     }
 }
@@ -985,6 +1282,11 @@ impl Lexed {
 /// - A raw text, `r` right before `"`, runs to the next `"` of the line, and keeps each
 ///   character as written. Without that `"`, it gets a diagnostic, and holds the rest of
 ///   the line.
+/// - A text, from `"` to the next `"` of the line, gives `TextStart`, its pieces and its
+///   interpolations, then `TextEnd`. A piece holds its characters with their escapes read.
+///   An interpolation, from `{` to its `}`, is read as code, where `//` is two `/`; its
+///   first `:` outside any `(`, `[` or `{` of that code starts its format. A text or an
+///   interpolation not closed on its line gets a diagnostic, and ends at the end of the line.
 /// - Operators and punctuation are read as the longest token that matches: `<<=` is one
 ///   token, not `<<` then `=`.
 /// - Any other character gets a diagnostic, and reading goes on after it.
@@ -1064,10 +1366,11 @@ mod tests {
     use std::ops::Range;
 
     use ExpectedDiagnostic::{
-        AfterExponent, DocCommentNotAlone, EmptyCharacterLiteral, FloatNotDecimal, InvalidDigit,
-        LeadingZero, MalformedUnicodeEscape, MisplacedUnderscore, MissingDigits,
-        MoreThanOneCharacter, NotScalarValue, NumberSuffix, ReservedWord, UnexpectedCharacter,
-        UnknownEscape, UnterminatedCharacterLiteral, UnterminatedRawText, UppercasePrefix,
+        AfterExponent, DocCommentNotAlone, EmptyCharacterLiteral, EmptyInterpolation,
+        FloatNotDecimal, InvalidDigit, LeadingZero, MalformedUnicodeEscape, MisplacedUnderscore,
+        MissingDigits, MoreThanOneCharacter, NotScalarValue, NumberSuffix, ReservedWord,
+        UnexpectedCharacter, UnknownEscape, UnmatchedBraceInText, UnterminatedCharacterLiteral,
+        UnterminatedInterpolation, UnterminatedRawText, UnterminatedText, UppercasePrefix,
     };
 
     /// A diagnostic the lexer should report, with its byte range.
@@ -1100,6 +1403,10 @@ mod tests {
         /// The escape as written.
         NotScalarValue(&'static str, Range<u32>),
         UnterminatedRawText(Range<u32>),
+        UnterminatedText(Range<u32>),
+        UnmatchedBraceInText(Range<u32>),
+        EmptyInterpolation(Range<u32>),
+        UnterminatedInterpolation(Range<u32>),
     }
 
     impl ExpectedDiagnostic {
@@ -1213,6 +1520,24 @@ mod tests {
                     Diagnostic::new(lex(19), "unterminated raw text", Primary::span(span(range)))
                         .with_help(r#"a raw text fits on one line and contains no `"`"#)
                 }
+                UnterminatedText(range) => {
+                    Diagnostic::new(lex(17), "unterminated text", Primary::span(span(range)))
+                        .with_help(r#"a text fits on one line; for several lines, write `"""`"#)
+                }
+                UnmatchedBraceInText(range) => Diagnostic::new(
+                    lex(17),
+                    "unmatched `}` in a text",
+                    Primary::span(span(range)),
+                )
+                .with_help(r"for a literal brace, write `\}`"),
+                EmptyInterpolation(range) => {
+                    Diagnostic::new(lex(20), "empty interpolation", Primary::span(span(range)))
+                }
+                UnterminatedInterpolation(range) => Diagnostic::new(
+                    lex(20),
+                    "unterminated interpolation",
+                    Primary::span(span(range)),
+                ),
             }
         }
     }
@@ -2686,5 +3011,707 @@ mod tests {
             ],
             &[],
         );
+    }
+
+    #[test]
+    fn text_gives_its_start_its_piece_and_its_end() {
+        assert_lexed(
+            r#""abc""#,
+            &[
+                r#"1:1 TextStart "\"""#,
+                r#"1:2 TextPiece("abc") "abc""#,
+                r#"1:5 TextEnd "\"""#,
+                r#"1:6 Eof """#,
+            ],
+            &[],
+        );
+        // No empty piece.
+        assert_lexed(
+            r#""""#,
+            &[
+                r#"1:1 TextStart "\"""#,
+                r#"1:2 TextEnd "\"""#,
+                r#"1:3 Eof """#,
+            ],
+            &[],
+        );
+    }
+
+    #[test]
+    fn interpolation_and_its_format_give_their_tokens() {
+        assert_lexed(
+            r#""a\t{b:>8}""#,
+            &[
+                r#"1:1 TextStart "\"""#,
+                r#"1:2 TextPiece("a\t") "a\\t""#,
+                r#"1:5 InterpolationStart "{""#,
+                r#"1:6 Identifier "b""#,
+                r#"1:7 Format(">8") ":>8""#,
+                r#"1:10 InterpolationEnd "}""#,
+                r#"1:11 TextEnd "\"""#,
+                r#"1:12 Eof """#,
+            ],
+            &[],
+        );
+    }
+
+    #[test]
+    fn escapes_give_their_characters_in_one_piece() {
+        assert_lexed(
+            r#""a\tb\u{e9}\{x\}""#,
+            &[
+                r#"1:1 TextStart "\"""#,
+                r#"1:2 TextPiece("a\tbé{x}") "a\\tb\\u{e9}\\{x\\}""#,
+                r#"1:17 TextEnd "\"""#,
+                r#"1:18 Eof """#,
+            ],
+            &[],
+        );
+    }
+
+    #[test]
+    fn refused_escape_in_a_text_gives_u_fffd() {
+        // The text goes on after it.
+        assert_lexed(
+            r#""a\qb""#,
+            &[
+                r#"1:1 TextStart "\"""#,
+                r#"1:2 TextPiece("a�b") "a\\qb""#,
+                r#"1:6 TextEnd "\"""#,
+                r#"1:7 Eof """#,
+            ],
+            &[UnknownEscape(r"\q", 2..4)],
+        );
+    }
+
+    #[test]
+    fn text_is_not_a_comment() {
+        assert_lexed(
+            r#""a // b""#,
+            &[
+                r#"1:1 TextStart "\"""#,
+                r#"1:2 TextPiece("a // b") "a // b""#,
+                r#"1:8 TextEnd "\"""#,
+                r#"1:9 Eof """#,
+            ],
+            &[],
+        );
+    }
+
+    #[test]
+    fn examples_of_lex_20_give_their_tokens() {
+        let cases: [(&str, &[&str]); 5] = [
+            (
+                r#""{name}""#,
+                &[
+                    r#"1:1 TextStart "\"""#,
+                    r#"1:2 InterpolationStart "{""#,
+                    r#"1:3 Identifier "name""#,
+                    r#"1:7 InterpolationEnd "}""#,
+                    r#"1:8 TextEnd "\"""#,
+                    r#"1:9 Eof """#,
+                ],
+            ),
+            (
+                r#""{removed.len()} fichier(s)""#,
+                &[
+                    r#"1:1 TextStart "\"""#,
+                    r#"1:2 InterpolationStart "{""#,
+                    r#"1:3 Identifier "removed""#,
+                    r#"1:10 Dot ".""#,
+                    r#"1:11 Identifier "len""#,
+                    r#"1:14 OpenParen "(""#,
+                    r#"1:15 CloseParen ")""#,
+                    r#"1:16 InterpolationEnd "}""#,
+                    r#"1:17 TextPiece(" fichier(s)") " fichier(s)""#,
+                    r#"1:28 TextEnd "\"""#,
+                    r#"1:29 Eof """#,
+                ],
+            ),
+            (
+                r#""{cents / 100:>8}""#,
+                &[
+                    r#"1:1 TextStart "\"""#,
+                    r#"1:2 InterpolationStart "{""#,
+                    r#"1:3 Identifier "cents""#,
+                    r#"1:9 Slash "/""#,
+                    r#"1:11 Int(Some(100)) "100""#,
+                    r#"1:14 Format(">8") ":>8""#,
+                    r#"1:17 InterpolationEnd "}""#,
+                    r#"1:18 TextEnd "\"""#,
+                    r#"1:19 Eof """#,
+                ],
+            ),
+            (
+                r#""{names.join(", ")}""#,
+                &[
+                    r#"1:1 TextStart "\"""#,
+                    r#"1:2 InterpolationStart "{""#,
+                    r#"1:3 Identifier "names""#,
+                    r#"1:8 Dot ".""#,
+                    r#"1:9 Identifier "join""#,
+                    r#"1:13 OpenParen "(""#,
+                    r#"1:14 TextStart "\"""#,
+                    r#"1:15 TextPiece(", ") ", ""#,
+                    r#"1:17 TextEnd "\"""#,
+                    r#"1:18 CloseParen ")""#,
+                    r#"1:19 InterpolationEnd "}""#,
+                    r#"1:20 TextEnd "\"""#,
+                    r#"1:21 Eof """#,
+                ],
+            ),
+            (
+                r#""\{name\}""#,
+                &[
+                    r#"1:1 TextStart "\"""#,
+                    r#"1:2 TextPiece("{name}") "\\{name\\}""#,
+                    r#"1:10 TextEnd "\"""#,
+                    r#"1:11 Eof """#,
+                ],
+            ),
+        ];
+
+        for (text, expected_tokens) in cases {
+            assert_lexed(text, expected_tokens, &[]);
+        }
+    }
+
+    #[test]
+    fn colon_opens_the_format_only_at_depth_zero() {
+        let cases: [(&str, &[&str]); 3] = [
+            (
+                r#""{f(a: 1):x}""#,
+                &[
+                    r#"1:1 TextStart "\"""#,
+                    r#"1:2 InterpolationStart "{""#,
+                    r#"1:3 Identifier "f""#,
+                    r#"1:4 OpenParen "(""#,
+                    r#"1:5 Identifier "a""#,
+                    r#"1:6 Colon ":""#,
+                    r#"1:8 Int(Some(1)) "1""#,
+                    r#"1:9 CloseParen ")""#,
+                    r#"1:10 Format("x") ":x""#,
+                    r#"1:12 InterpolationEnd "}""#,
+                    r#"1:13 TextEnd "\"""#,
+                    r#"1:14 Eof """#,
+                ],
+            ),
+            (
+                r#""{xs[a:b]}""#,
+                &[
+                    r#"1:1 TextStart "\"""#,
+                    r#"1:2 InterpolationStart "{""#,
+                    r#"1:3 Identifier "xs""#,
+                    r#"1:5 OpenBracket "[""#,
+                    r#"1:6 Identifier "a""#,
+                    r#"1:7 Colon ":""#,
+                    r#"1:8 Identifier "b""#,
+                    r#"1:9 CloseBracket "]""#,
+                    r#"1:10 InterpolationEnd "}""#,
+                    r#"1:11 TextEnd "\"""#,
+                    r#"1:12 Eof """#,
+                ],
+            ),
+            (
+                r#""{{a: 1}}""#,
+                &[
+                    r#"1:1 TextStart "\"""#,
+                    r#"1:2 InterpolationStart "{""#,
+                    r#"1:3 OpenBrace "{""#,
+                    r#"1:4 Identifier "a""#,
+                    r#"1:5 Colon ":""#,
+                    r#"1:7 Int(Some(1)) "1""#,
+                    r#"1:8 CloseBrace "}""#,
+                    r#"1:9 InterpolationEnd "}""#,
+                    r#"1:10 TextEnd "\"""#,
+                    r#"1:11 Eof """#,
+                ],
+            ),
+        ];
+
+        for (text, expected_tokens) in cases {
+            assert_lexed(text, expected_tokens, &[]);
+        }
+    }
+
+    #[test]
+    fn braces_of_a_block_in_an_interpolation_are_delimiters() {
+        assert_lexed(
+            r#""{if a { 1 } else { 2 }}""#,
+            &[
+                r#"1:1 TextStart "\"""#,
+                r#"1:2 InterpolationStart "{""#,
+                r#"1:3 Keyword(If) "if""#,
+                r#"1:6 Identifier "a""#,
+                r#"1:8 OpenBrace "{""#,
+                r#"1:10 Int(Some(1)) "1""#,
+                r#"1:12 CloseBrace "}""#,
+                r#"1:14 Keyword(Else) "else""#,
+                r#"1:19 OpenBrace "{""#,
+                r#"1:21 Int(Some(2)) "2""#,
+                r#"1:23 CloseBrace "}""#,
+                r#"1:24 InterpolationEnd "}""#,
+                r#"1:25 TextEnd "\"""#,
+                r#"1:26 Eof """#,
+            ],
+            &[],
+        );
+    }
+
+    #[test]
+    fn text_inside_an_interpolation_follows_the_same_rules() {
+        // The example of the lexing notion sheet, §4.
+        assert_lexed(
+            r#""a{f("b{x}")}c""#,
+            &[
+                r#"1:1 TextStart "\"""#,
+                r#"1:2 TextPiece("a") "a""#,
+                r#"1:3 InterpolationStart "{""#,
+                r#"1:4 Identifier "f""#,
+                r#"1:5 OpenParen "(""#,
+                r#"1:6 TextStart "\"""#,
+                r#"1:7 TextPiece("b") "b""#,
+                r#"1:8 InterpolationStart "{""#,
+                r#"1:9 Identifier "x""#,
+                r#"1:10 InterpolationEnd "}""#,
+                r#"1:11 TextEnd "\"""#,
+                r#"1:12 CloseParen ")""#,
+                r#"1:13 InterpolationEnd "}""#,
+                r#"1:14 TextPiece("c") "c""#,
+                r#"1:15 TextEnd "\"""#,
+                r#"1:16 Eof """#,
+            ],
+            &[],
+        );
+    }
+
+    #[test]
+    fn neighboring_interpolations_give_no_empty_piece() {
+        assert_lexed(
+            r#""{a}{b}""#,
+            &[
+                r#"1:1 TextStart "\"""#,
+                r#"1:2 InterpolationStart "{""#,
+                r#"1:3 Identifier "a""#,
+                r#"1:4 InterpolationEnd "}""#,
+                r#"1:5 InterpolationStart "{""#,
+                r#"1:6 Identifier "b""#,
+                r#"1:7 InterpolationEnd "}""#,
+                r#"1:8 TextEnd "\"""#,
+                r#"1:9 Eof """#,
+            ],
+            &[],
+        );
+    }
+
+    #[test]
+    fn two_slashes_in_an_interpolation_are_two_slashes() {
+        assert_lexed(
+            r#""{a // b}""#,
+            &[
+                r#"1:1 TextStart "\"""#,
+                r#"1:2 InterpolationStart "{""#,
+                r#"1:3 Identifier "a""#,
+                r#"1:5 Slash "/""#,
+                r#"1:6 Slash "/""#,
+                r#"1:8 Identifier "b""#,
+                r#"1:9 InterpolationEnd "}""#,
+                r#"1:10 TextEnd "\"""#,
+                r#"1:11 Eof """#,
+            ],
+            &[],
+        );
+    }
+
+    #[test]
+    fn two_slashes_after_a_text_open_a_comment() {
+        assert_lexed(
+            r#""{a}" // b"#,
+            &[
+                r#"1:1 TextStart "\"""#,
+                r#"1:2 InterpolationStart "{""#,
+                r#"1:3 Identifier "a""#,
+                r#"1:4 InterpolationEnd "}""#,
+                r#"1:5 TextEnd "\"""#,
+                r#"1:11 Eof """#,
+            ],
+            &[],
+        );
+    }
+
+    #[test]
+    fn empty_format_gives_an_empty_value() {
+        assert_lexed(
+            r#""{x:}""#,
+            &[
+                r#"1:1 TextStart "\"""#,
+                r#"1:2 InterpolationStart "{""#,
+                r#"1:3 Identifier "x""#,
+                r#"1:4 Format("") ":""#,
+                r#"1:5 InterpolationEnd "}""#,
+                r#"1:6 TextEnd "\"""#,
+                r#"1:7 Eof """#,
+            ],
+            &[],
+        );
+    }
+
+    #[test]
+    fn unterminated_text_runs_to_the_end_of_the_line() {
+        assert_lexed(
+            r#""abc"#,
+            &[
+                r#"1:1 TextStart "\"""#,
+                r#"1:2 TextPiece("abc") "abc""#,
+                r#"1:5 TextEnd """#,
+                r#"1:5 Eof """#,
+            ],
+            &[UnterminatedText(0..4)],
+        );
+        assert_lexed(
+            r#"""#,
+            &[
+                r#"1:1 TextStart "\"""#,
+                r#"1:2 TextEnd """#,
+                r#"1:2 Eof """#,
+            ],
+            &[UnterminatedText(0..1)],
+        );
+        // The end token comes before the line ending, which lexing reads as usual.
+        assert_lexed(
+            "\"abc\n+",
+            &[
+                r#"1:1 TextStart "\"""#,
+                r#"1:2 TextPiece("abc") "abc""#,
+                r#"1:5 TextEnd """#,
+                r#"1:5 Newline "\n""#,
+                r#"2:1 Plus "+""#,
+                r#"2:2 Eof """#,
+            ],
+            &[UnterminatedText(0..4)],
+        );
+        assert_lexed(
+            "\"abc\r\n+",
+            &[
+                r#"1:1 TextStart "\"""#,
+                r#"1:2 TextPiece("abc") "abc""#,
+                r#"1:5 TextEnd """#,
+                r#"1:5 Newline "\r\n""#,
+                r#"2:1 Plus "+""#,
+                r#"2:2 Eof """#,
+            ],
+            &[UnterminatedText(0..4)],
+        );
+        // After an interpolation, the diagnostic still starts at the text's `"`.
+        assert_lexed(
+            r#""{a}b"#,
+            &[
+                r#"1:1 TextStart "\"""#,
+                r#"1:2 InterpolationStart "{""#,
+                r#"1:3 Identifier "a""#,
+                r#"1:4 InterpolationEnd "}""#,
+                r#"1:5 TextPiece("b") "b""#,
+                r#"1:6 TextEnd """#,
+                r#"1:6 Eof """#,
+            ],
+            &[UnterminatedText(0..5)],
+        );
+    }
+
+    #[test]
+    fn lone_closing_brace_is_refused_and_kept_in_the_piece() {
+        assert_lexed(
+            r#""a}b""#,
+            &[
+                r#"1:1 TextStart "\"""#,
+                r#"1:2 TextPiece("a}b") "a}b""#,
+                r#"1:5 TextEnd "\"""#,
+                r#"1:6 Eof """#,
+            ],
+            &[UnmatchedBraceInText(2..3)],
+        );
+    }
+
+    #[test]
+    fn empty_interpolation_is_refused() {
+        assert_lexed(
+            r#""{}""#,
+            &[
+                r#"1:1 TextStart "\"""#,
+                r#"1:2 InterpolationStart "{""#,
+                r#"1:3 InterpolationEnd "}""#,
+                r#"1:4 TextEnd "\"""#,
+                r#"1:5 Eof """#,
+            ],
+            &[EmptyInterpolation(1..3)],
+        );
+        for text in [r#""{ }""#, "\"{\t}\""] {
+            assert_lexed(
+                text,
+                &[
+                    r#"1:1 TextStart "\"""#,
+                    r#"1:2 InterpolationStart "{""#,
+                    r#"1:4 InterpolationEnd "}""#,
+                    r#"1:5 TextEnd "\"""#,
+                    r#"1:6 Eof """#,
+                ],
+                &[EmptyInterpolation(1..4)],
+            );
+        }
+    }
+
+    #[test]
+    fn only_spaces_and_tabs_make_an_interpolation_empty() {
+        // A no-break space is an unexpected character.
+        assert_lexed(
+            "\"{\u{a0}}\"",
+            &[
+                r#"1:1 TextStart "\"""#,
+                r#"1:2 InterpolationStart "{""#,
+                r#"1:4 InterpolationEnd "}""#,
+                r#"1:5 TextEnd "\"""#,
+                r#"1:6 Eof """#,
+            ],
+            &[UnexpectedCharacter('\u{a0}', 2..4)],
+        );
+        // A format alone is not empty: checking the expression is the parser's job.
+        assert_lexed(
+            r#""{:x}""#,
+            &[
+                r#"1:1 TextStart "\"""#,
+                r#"1:2 InterpolationStart "{""#,
+                r#"1:3 Format("x") ":x""#,
+                r#"1:5 InterpolationEnd "}""#,
+                r#"1:6 TextEnd "\"""#,
+                r#"1:7 Eof """#,
+            ],
+            &[],
+        );
+    }
+
+    #[test]
+    fn unterminated_interpolation_ends_with_its_text_at_the_line_end() {
+        assert_lexed(
+            r#""{a"#,
+            &[
+                r#"1:1 TextStart "\"""#,
+                r#"1:2 InterpolationStart "{""#,
+                r#"1:3 Identifier "a""#,
+                r#"1:4 InterpolationEnd """#,
+                r#"1:4 TextEnd """#,
+                r#"1:4 Eof """#,
+            ],
+            &[UnterminatedInterpolation(1..3)],
+        );
+        assert_lexed(
+            "\"{a\n+",
+            &[
+                r#"1:1 TextStart "\"""#,
+                r#"1:2 InterpolationStart "{""#,
+                r#"1:3 Identifier "a""#,
+                r#"1:4 InterpolationEnd """#,
+                r#"1:4 TextEnd """#,
+                r#"1:4 Newline "\n""#,
+                r#"2:1 Plus "+""#,
+                r#"2:2 Eof """#,
+            ],
+            &[UnterminatedInterpolation(1..3)],
+        );
+        // Under a `(`, which closes with the interpolation: the line ending gives a token.
+        assert_lexed(
+            "\"{f(a\n+",
+            &[
+                r#"1:1 TextStart "\"""#,
+                r#"1:2 InterpolationStart "{""#,
+                r#"1:3 Identifier "f""#,
+                r#"1:4 OpenParen "(""#,
+                r#"1:5 Identifier "a""#,
+                r#"1:6 InterpolationEnd """#,
+                r#"1:6 TextEnd """#,
+                r#"1:6 Newline "\n""#,
+                r#"2:1 Plus "+""#,
+                r#"2:2 Eof """#,
+            ],
+            &[UnterminatedInterpolation(1..5)],
+        );
+        // In a format, which stops at the line end.
+        assert_lexed(
+            "\"{x:ab\n+",
+            &[
+                r#"1:1 TextStart "\"""#,
+                r#"1:2 InterpolationStart "{""#,
+                r#"1:3 Identifier "x""#,
+                r#"1:4 Format("ab") ":ab""#,
+                r#"1:7 InterpolationEnd """#,
+                r#"1:7 TextEnd """#,
+                r#"1:7 Newline "\n""#,
+                r#"2:1 Plus "+""#,
+                r#"2:2 Eof """#,
+            ],
+            &[UnterminatedInterpolation(1..6)],
+        );
+    }
+
+    #[test]
+    fn line_end_is_reported_once_by_the_innermost_cut() {
+        assert_lexed(
+            "\"{f(\"{a\n+",
+            &[
+                r#"1:1 TextStart "\"""#,
+                r#"1:2 InterpolationStart "{""#,
+                r#"1:3 Identifier "f""#,
+                r#"1:4 OpenParen "(""#,
+                r#"1:5 TextStart "\"""#,
+                r#"1:6 InterpolationStart "{""#,
+                r#"1:7 Identifier "a""#,
+                r#"1:8 InterpolationEnd """#,
+                r#"1:8 TextEnd """#,
+                r#"1:8 InterpolationEnd """#,
+                r#"1:8 TextEnd """#,
+                r#"1:8 Newline "\n""#,
+                r#"2:1 Plus "+""#,
+                r#"2:2 Eof """#,
+            ],
+            &[UnterminatedInterpolation(5..7)],
+        );
+        assert_lexed(
+            "\"{f(\"ab\n+",
+            &[
+                r#"1:1 TextStart "\"""#,
+                r#"1:2 InterpolationStart "{""#,
+                r#"1:3 Identifier "f""#,
+                r#"1:4 OpenParen "(""#,
+                r#"1:5 TextStart "\"""#,
+                r#"1:6 TextPiece("ab") "ab""#,
+                r#"1:8 TextEnd """#,
+                r#"1:8 InterpolationEnd """#,
+                r#"1:8 TextEnd """#,
+                r#"1:8 Newline "\n""#,
+                r#"2:1 Plus "+""#,
+                r#"2:2 Eof """#,
+            ],
+            &[UnterminatedText(4..7)],
+        );
+        // A raw text or a character literal reports it too.
+        assert_lexed(
+            "\"{r\"a\n+",
+            &[
+                r#"1:1 TextStart "\"""#,
+                r#"1:2 InterpolationStart "{""#,
+                r#"1:3 RawText("a") "r\"a""#,
+                r#"1:6 InterpolationEnd """#,
+                r#"1:6 TextEnd """#,
+                r#"1:6 Newline "\n""#,
+                r#"2:1 Plus "+""#,
+                r#"2:2 Eof """#,
+            ],
+            &[UnterminatedRawText(2..5)],
+        );
+        assert_lexed(
+            "\"{'a\n+",
+            &[
+                r#"1:1 TextStart "\"""#,
+                r#"1:2 InterpolationStart "{""#,
+                r#"1:3 Char('�') "'a""#,
+                r#"1:5 InterpolationEnd """#,
+                r#"1:5 TextEnd """#,
+                r#"1:5 Newline "\n""#,
+                r#"2:1 Plus "+""#,
+                r#"2:2 Eof """#,
+            ],
+            &[UnterminatedCharacterLiteral(2..4)],
+        );
+        // A text closed before the line end is not cut: the interpolation reports it.
+        assert_lexed(
+            "\"{\"a\"\n+",
+            &[
+                r#"1:1 TextStart "\"""#,
+                r#"1:2 InterpolationStart "{""#,
+                r#"1:3 TextStart "\"""#,
+                r#"1:4 TextPiece("a") "a""#,
+                r#"1:5 TextEnd "\"""#,
+                r#"1:6 InterpolationEnd """#,
+                r#"1:6 TextEnd """#,
+                r#"1:6 Newline "\n""#,
+                r#"2:1 Plus "+""#,
+                r#"2:2 Eof """#,
+            ],
+            &[UnterminatedInterpolation(1..5)],
+        );
+        // Each line end counts alone: the cut of the first line does not silence the second.
+        assert_lexed(
+            "\"a\n\"{b",
+            &[
+                r#"1:1 TextStart "\"""#,
+                r#"1:2 TextPiece("a") "a""#,
+                r#"1:3 TextEnd """#,
+                r#"1:3 Newline "\n""#,
+                r#"2:1 TextStart "\"""#,
+                r#"2:2 InterpolationStart "{""#,
+                r#"2:3 Identifier "b""#,
+                r#"2:4 InterpolationEnd """#,
+                r#"2:4 TextEnd """#,
+                r#"2:4 Eof """#,
+            ],
+            &[UnterminatedText(0..2), UnterminatedInterpolation(4..6)],
+        );
+    }
+
+    #[test]
+    fn closing_delimiter_does_not_cross_an_interpolation() {
+        // The `}` closes the interpolation and the `(` inside it, not the outer block.
+        assert_lexed(
+            r#"{ "{ ( } x" }"#,
+            &[
+                r#"1:1 OpenBrace "{""#,
+                r#"1:3 TextStart "\"""#,
+                r#"1:4 InterpolationStart "{""#,
+                r#"1:6 OpenParen "(""#,
+                r#"1:8 InterpolationEnd "}""#,
+                r#"1:9 TextPiece(" x") " x""#,
+                r#"1:11 TextEnd "\"""#,
+                r#"1:13 CloseBrace "}""#,
+                r#"1:14 Eof """#,
+            ],
+            &[],
+        );
+        // The `)` cannot close the outer `(`: the first line ending gives no token. The second
+        // `)` closes it: the next line ending gives one.
+        assert_lexed(
+            "( \"{ ) }\"\n)\n+",
+            &[
+                r#"1:1 OpenParen "(""#,
+                r#"1:3 TextStart "\"""#,
+                r#"1:4 InterpolationStart "{""#,
+                r#"1:6 CloseParen ")""#,
+                r#"1:8 InterpolationEnd "}""#,
+                r#"1:9 TextEnd "\"""#,
+                r#"2:1 CloseParen ")""#,
+                r#"2:2 Newline "\n""#,
+                r#"3:1 Plus "+""#,
+                r#"3:2 Eof """#,
+            ],
+            &[],
+        );
+    }
+
+    #[test]
+    fn deeply_nested_texts_do_not_overflow_the_stack() {
+        // Tests run on threads with a small stack: a recursive lexer would overflow here.
+        let depth = 10_000;
+        let text = format!("{}x{}", "\"{".repeat(depth), "}\"".repeat(depth));
+
+        let mut source_map = SourceMap::new();
+        let file = source_map.add(String::from("test.fm"), text);
+        let lexed = tokenize(&source_map, file);
+
+        assert!(
+            lexed.diagnostics().is_empty(),
+            "diagnostics: {:?}",
+            lexed.diagnostics()
+        );
+        // Per level: `TextStart`, `InterpolationStart`, `InterpolationEnd`, `TextEnd`. Then
+        // `x` and `Eof`.
+        assert_eq!(lexed.tokens().len(), 4 * depth + 2);
     }
 }
