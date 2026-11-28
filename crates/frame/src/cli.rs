@@ -313,7 +313,7 @@ fn parse_option_value<T>(
 }
 
 fn parse_seed(seed: String) -> Result<u64, UsageError> {
-    // `from_str_radix` accepts a leading `+`, so the digits are checked first.
+    // Check the digits first: `from_str_radix` would accept a leading `+`.
     if !(1usize..=16usize).contains(&seed.chars().count())
         || !seed.chars().all(|c| c.is_ascii_hexdigit())
     {
@@ -335,8 +335,8 @@ fn lossy_string(arg: &OsStr) -> String {
     arg.to_string_lossy().into_owned()
 }
 
-// Checks the encoded bytes rather than `to_str`, so that a non-UTF-8 argument starting with
-// `-` still counts as an option.
+// Look at the raw bytes, not `to_str()`: a non-UTF-8 argument starting with `-` is still an
+// option.
 fn is_option(arg: &OsStr) -> bool {
     arg.as_encoded_bytes().starts_with(b"-")
 }

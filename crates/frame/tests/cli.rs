@@ -230,7 +230,7 @@ fn check_rejects_a_script_in_an_unreadable_directory_as_a_usage_error() {
         .expect("the path of the script should be UTF-8");
 
     let outcome = execute_command(&["check", path]);
-    // Restored before any assertion, since `cargo clean` cannot remove a directory with no
+    // Restore them before any assertion: `cargo clean` can't remove a directory with no
     // permissions.
     fs::set_permissions(&directory, fs::Permissions::from_mode(0o755))
         .expect("the permissions of the unreadable directory should be restored");

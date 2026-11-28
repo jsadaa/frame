@@ -384,8 +384,7 @@ impl Diagnostic {
     }
 }
 
-/// Asserts that `text` has no `\n`, not even at the end, since rendering adds line endings
-/// itself.
+/// Rendering adds the line endings itself, so `text` can't hold a `\n`, not even at the end.
 fn assert_text_fits_on_one_line(text: &str, field: &str) {
     assert!(
         !text.contains('\n'),
@@ -393,8 +392,7 @@ fn assert_text_fits_on_one_line(text: &str, field: &str) {
     );
 }
 
-/// Asserts that `text` is not empty. An empty text says nothing, and would leave a trailing
-/// space in the rendering.
+/// An empty text says nothing, and would leave a trailing space in the rendering.
 fn assert_not_empty(text: &str, field: &str) {
     assert!(
         !text.is_empty(),

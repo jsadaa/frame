@@ -17,7 +17,6 @@ const ARGUMENTS: RuleCode = RuleCode::new(Prefix::Exp, 14);
 const EXHAUSTIVENESS: RuleCode = RuleCode::new(Prefix::Pat, 15);
 const USELESS_TRY: RuleCode = RuleCode::new(Prefix::Err, 14);
 
-/// Returns a source map holding one file, and that file's id.
 fn source_map_with_file(name: &str, text: &str) -> (SourceMap, FileId) {
     let mut source_map = SourceMap::new();
     let file = source_map.add(name.to_string(), text.to_string());
@@ -40,7 +39,6 @@ fn span_of(excerpt: &str, source_map: &SourceMap, file: FileId) -> Span {
     span_at(file, start, excerpt)
 }
 
-/// Returns the span of the last `excerpt` in `file`.
 fn last_span_of(excerpt: &str, source_map: &SourceMap, file: FileId) -> Span {
     let text = source_map.file(file).text();
     let Some(start) = text.rfind(excerpt) else {
@@ -564,8 +562,8 @@ fn characters_forbidden_by_lex_2_are_written_as_replacement_characters() {
 
 #[test]
 fn every_character_forbidden_by_lex_2_is_written_as_a_replacement_character() {
-    // LEX-2's list, written from the rule rather than from the code. A CR is refused here,
-    // since no line feed follows it.
+    // LEX-2's list, copied from the rule rather than the code, so it can catch a mistake
+    // there. The CR counts here because no line feed follows it.
     let forbidden = ('\u{0}'..='\u{1F}')
         .filter(|&c| c != '\t' && c != '\n')
         .chain('\u{7F}'..='\u{9F}')
